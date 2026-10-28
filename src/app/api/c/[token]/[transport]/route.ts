@@ -25,7 +25,7 @@ async function handle(req: Request, ctx: { params: Promise<{ token: string; tran
   if (!row || row.revoked_at) return new Response("Not found", { status: 404 });
 
   // Best-effort usage stamp
-  void db.from("api_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", row.id).then(() => {});
+  await db.from("api_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", row.id);
 
   const handler = createMcpHandler(
     (server) => registerTools(server, { db, userId: row.user_id }),
