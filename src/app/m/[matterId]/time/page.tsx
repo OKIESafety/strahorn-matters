@@ -150,8 +150,6 @@ export default async function TimePage({
             <p className="muted" style={{ fontSize: "0.88rem" }}>
               Exchanges follow the court-ordered schedule unless you log that one was late or didn&apos;t happen.
             </p>
-              </p>
-            )}
 
             <div className="card">
               <h3>Exchanges</h3>
@@ -192,7 +190,7 @@ export default async function TimePage({
                   ))}
                   {liveCount === 0 && (
                     <tr>
-                      <td colSpan={3} className="muted">No check-ins recorded yet.</td>
+                      <td colSpan={3} className="muted">No late or missed exchanges logged.</td>
                     </tr>
                   )}
                 </tbody>
