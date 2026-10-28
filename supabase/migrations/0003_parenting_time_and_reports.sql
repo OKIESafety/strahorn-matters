@@ -81,7 +81,6 @@ begin
   end if;
   return new;
 end $$;
-drop trigger if exists exchanges_append_only on public.exchanges;
 create trigger exchanges_append_only before update or delete on public.exchanges
   for each row execute function public.tg_exchanges_append_only();
 
@@ -138,7 +137,6 @@ as $$
 begin
   raise exception '% records cannot be changed', tg_table_name;
 end $$;
-drop trigger if exists exports_immutable on public.exports;
 create trigger exports_immutable before update or delete on public.exports
   for each row execute function public.tg_immutable();
 
@@ -150,23 +148,15 @@ begin
   new.updated_at := now();
   return new;
 end $$;
-drop trigger if exists touch_schedules on public.schedules;
 create trigger touch_schedules before update on public.schedules for each row execute function public.tg_touch();
-drop trigger if exists touch_expenses on public.expenses;
 create trigger touch_expenses before update on public.expenses for each row execute function public.tg_touch();
 
 -- Audit
-drop trigger if exists audit_schedules on public.schedules;
 create trigger audit_schedules after insert or update or delete on public.schedules for each row execute function public.tg_audit();
-drop trigger if exists audit_overrides on public.schedule_overrides;
 create trigger audit_overrides after insert or update or delete on public.schedule_overrides for each row execute function public.tg_audit();
-drop trigger if exists audit_exchanges on public.exchanges;
 create trigger audit_exchanges after insert or update on public.exchanges for each row execute function public.tg_audit();
-drop trigger if exists audit_expenses on public.expenses;
 create trigger audit_expenses after insert or update or delete on public.expenses for each row execute function public.tg_audit();
-drop trigger if exists audit_share_links on public.share_links;
 create trigger audit_share_links after insert or update on public.share_links for each row execute function public.tg_audit();
-drop trigger if exists audit_exports on public.exports;
 create trigger audit_exports after insert on public.exports for each row execute function public.tg_audit();
 
 revoke execute on function public.tg_exchanges_append_only() from public, anon, authenticated;
