@@ -46,6 +46,6 @@ Re-processing an overlapping export doesn't create duplicates (`source_key` + si
 
 ## AI tools
 `list_matters`, `get_matter`, `search_events`, `get_events`, `create_issue`, `create_events` (batch ≤100),
-`update_event`, `add_note`, `list_evidence`, `read_evidence_text`, `upload_evidence`, `attach_evidence`.
+`update_event`, `add_note`, `list_evidence`, `read_evidence_text`, `upload_evidence`, `upload_evidence_file` (by reference, ≤45 MB), `attach_evidence`.
 
 AI-created events default to **Needs review**; the timeline shows a banner until someone reviews them.

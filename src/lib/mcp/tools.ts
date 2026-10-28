@@ -33,6 +33,8 @@ Rules for writing records:
 - create_events skips likely duplicates by default and tells you which; report those to the user instead of forcing them.
 - Text exports uploaded in the app appear in list_evidence with kind "text_export"; read them with read_evidence_text
   in chunks, then link events to that evidence_id with an excerpt and page_ref (row/line number).
+- To save an original file (PDF, screenshot, photo) that exists in the conversation, use upload_evidence_file
+  (passes the file by reference, up to 45 MB) instead of base64 in upload_evidence.
 - Original evidence can never be edited or deleted. After writing, tell the user what you created and what you skipped.`;
 
 type Ctx = { db: SupabaseClient; userId: string };
@@ -67,6 +69,50 @@ async function eventMatter(ctx: Ctx, eventId: string) {
   const { data } = await ctx.db.from("events").select("matter_id").eq("id", eventId).maybeSingle();
   if (!data) throw new Error(`Event ${eventId} not found`);
   return data.matter_id as string;
+}
+
+const MAX_FETCH_BYTES = 45 * 1024 * 1024;
+
+/** Downloads a file by https URL with a size cap. Refuses local/private hosts. */
+async function fetchFile(rawUrl: string) {
+  const url = new URL(rawUrl);
+  if (url.protocol !== "https:") throw new Error("Only https links are accepted");
+  const host = url.hostname.toLowerCase();
+  if (
+    host === "localhost" ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    /^(\d{1,3}\.){3}\d{1,3}$/.test(host) ||
+    host.includes(":")
+  ) {
+    throw new Error("That address isn't allowed");
+  }
+  const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(40_000) });
+  if (!res.ok || !res.body) throw new Error(`Couldn't download the file (HTTP ${res.status})`);
+  const declared = Number(res.headers.get("content-length") ?? 0);
+  if (declared > MAX_FETCH_BYTES) throw new Error("File is over 45 MB; upload it in the app instead");
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > MAX_FETCH_BYTES) {
+      await reader.cancel();
+      throw new Error("File is over 45 MB; upload it in the app instead");
+    }
+    chunks.push(value);
+  }
+  const cd = res.headers.get("content-disposition") ?? "";
+  const cdName = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)?.[1];
+  const pathName = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+  return {
+    bytes: Buffer.concat(chunks.map((c) => Buffer.from(c))),
+    contentType: (res.headers.get("content-type") ?? "").split(";")[0].trim() || null,
+    nameFromUrl: (cdName ? decodeURIComponent(cdName) : pathName) || null,
+  };
 }
 
 function wrap<A>(fn: (args: A) => Promise<any>) {
@@ -499,7 +545,7 @@ export function registerTools(server: McpServer, ctx: Ctx) {
   server.tool(
     "upload_evidence",
     "Store a new evidence file (base64, or plain text for text content). Max ~8 MB. Optionally link to events. " +
-      "Prefer having the user upload large files in the app instead.",
+      "For files that exist in the conversation (PDFs, screenshots), use upload_evidence_file instead.",
     {
       matter_id: z.string().uuid(),
       filename: z.string().min(1),
@@ -535,6 +581,82 @@ export function registerTools(server: McpServer, ctx: Ctx) {
       return ok({ evidence_id: id });
     })
   );
+
+  // ── File handoff without base64 ──────────────────────────────────────────
+  // ChatGPT passes files (uploads, generated PDFs) as { download_url, file_id, ... } when a tool
+  // declares _meta["openai/fileParams"]. Other clients can pass any https URL in source_url.
+  const fileUploadShape = {
+    matter_id: z.string().uuid(),
+    file: z
+      .object({
+        download_url: z.string().url(),
+        file_id: z.string().optional(),
+        file_name: z.string().optional(),
+        mime_type: z.string().optional(),
+      })
+      .optional()
+      .describe("A file from the conversation (ChatGPT fills this in automatically)"),
+    source_url: z.string().url().optional().describe("Alternative: a direct https link to the file"),
+    filename: z.string().optional().describe("Name to store it under; defaults to the file's own name"),
+    kind: z.enum(EVIDENCE_KINDS).optional(),
+    description: z.string().optional(),
+    source_date: dateStr.optional(),
+    link_to_events: z
+      .array(
+        z.object({
+          event_id: z.string().uuid(),
+          excerpt: z.string().optional().nullable(),
+          page_ref: z.string().optional().nullable(),
+        })
+      )
+      .max(100)
+      .optional()
+      .describe("Events this file supports, with exact quote and page/row for each"),
+  };
+  const fileUploadDescription =
+    "Store an original evidence file (PDF, screenshot, photo, CSV — up to 45 MB) by reference instead of base64, " +
+    "then optionally link it to events. Use this for files that exist in the conversation.";
+  const fileUploadHandler = wrap(async (a: any) => {
+    await requireWrite(ctx, a.matter_id);
+    const url: string | undefined = a.file?.download_url ?? a.source_url;
+    if (!url) throw new Error("Provide file (from the conversation) or source_url");
+    const { bytes, contentType, nameFromUrl } = await fetchFile(url);
+    const filename = a.filename || a.file?.file_name || nameFromUrl || "evidence-file";
+    const mime = a.file?.mime_type || contentType || "application/octet-stream";
+    const id = await storeEvidence(ctx.db, {
+      matterId: a.matter_id,
+      filename,
+      mimeType: mime,
+      bytes,
+      kind: (a.kind as EvidenceKind) ?? guessKind(mime, filename),
+      description: a.description ?? null,
+      sourceDate: a.source_date ?? null,
+      actor: { userId: ctx.userId, via: "ai" },
+    });
+    let linked = 0;
+    for (const l of a.link_to_events ?? []) {
+      await attachEvidence(ctx.db, a.matter_id, l.event_id, [
+        { evidence_id: id, excerpt: l.excerpt ?? null, page_ref: l.page_ref ?? null },
+      ]);
+      linked++;
+    }
+    return ok({ evidence_id: id, filename, size_bytes: bytes.length, linked_events: linked });
+  });
+
+  const anyServer = server as any;
+  if (typeof anyServer.registerTool === "function") {
+    anyServer.registerTool(
+      "upload_evidence_file",
+      {
+        description: fileUploadDescription,
+        inputSchema: fileUploadShape,
+        _meta: { "openai/fileParams": ["file"] },
+      },
+      fileUploadHandler
+    );
+  } else {
+    server.tool("upload_evidence_file", fileUploadDescription, fileUploadShape, fileUploadHandler);
+  }
 
   server.tool(
     "attach_evidence",
