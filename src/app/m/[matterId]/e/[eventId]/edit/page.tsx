@@ -76,6 +76,19 @@ export default async function EditEventPage({
         </div>
         <input name="new_person" type="text" placeholder="Add a person (optional)" style={{ marginTop: 8 }} />
       </div>
+      {opts.people.length > 0 && (
+        <div className="field">
+          <span className="label">Who attended</span>
+          <div className="chips">
+            {opts.people.map((p) => (
+              <label key={p.id} className="chip">
+                <input type="checkbox" name="attended" value={p.name} defaultChecked={e.attended_by.includes(p.name)} />
+                {p.name}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="field">
         <label htmlFor="tags">Tags (comma-separated)</label>
         <input id="tags" name="tags" type="text" defaultValue={e.tags.join(", ")} />

@@ -8,7 +8,7 @@ import { withSignedUrls, memberNames } from "@/lib/evidence-load";
 import { ConfidenceChip } from "@/components/event-card";
 import { EvidenceList } from "@/components/evidence-list";
 import { AddEvidence } from "@/components/add-evidence";
-import { addNoteAction, markReviewedAction, deleteEventAction } from "../../actions";
+import { addNoteAction, markReviewedAction, deleteEventAction, setExcludeAction } from "../../actions";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default async function EventPage({
@@ -61,10 +61,14 @@ export default async function EventPage({
   const note = addNoteAction.bind(null, matterId, { eventId });
   const del = deleteEventAction.bind(null, matterId, eventId);
   const review = markReviewedAction.bind(null, matterId, eventId);
+  const toggleExclude = setExcludeAction.bind(null, matterId, eventId, !e.exclude_from_reports);
 
   return (
     <>
       {saved && <div className="notice">Saved.</div>}
+      {e.exclude_from_reports && (
+        <div className="notice warn">Left out of reports, exhibit packets and share links. It stays in your private record.</div>
+      )}
       <div className="card">
         <div className="row between">
           <span className="event-date">
@@ -93,6 +97,12 @@ export default async function EventPage({
               <dd>{e.people.map((p) => p.name).join(", ")}</dd>
             </>
           )}
+          {e.attended_by.length > 0 && (
+            <>
+              <dt>Attended by</dt>
+              <dd>{e.attended_by.join(", ")}</dd>
+            </>
+          )}
           {e.source_ref && (
             <>
               <dt>Source</dt>
@@ -102,7 +112,6 @@ export default async function EventPage({
           <dt>Added</dt>
           <dd>
             {formatTimestamp(r.created_at)} by {names.get(r.created_by) ?? "member"}
-            {e.created_via === "ai" ? " via AI" : ""}
           </dd>
         </dl>
 
@@ -119,6 +128,11 @@ export default async function EventPage({
                 <button className="btn small primary">Mark reviewed</button>
               </form>
             )}
+            <form action={toggleExclude}>
+              <button className="btn small">
+                {e.exclude_from_reports ? "Include in reports" : "Leave out of reports"}
+              </button>
+            </form>
           </div>
         )}
       </div>
@@ -137,7 +151,7 @@ export default async function EventPage({
           <div key={n.id} style={{ marginBottom: 10 }}>
             <small className="muted">
               {names.get(n.author) ?? "Member"}
-              {n.author_kind === "ai" ? " (via AI)" : ""} · {formatTimestamp(n.created_at)}
+              {" · "}{formatTimestamp(n.created_at)}
             </small>
             <div style={{ whiteSpace: "pre-wrap" }}>{n.body}</div>
           </div>
@@ -158,7 +172,7 @@ export default async function EventPage({
                   <td style={{ whiteSpace: "nowrap" }}>{formatTimestamp(h.at)}</td>
                   <td>
                     {names.get(h.actor) ?? "Someone"}
-                    {h.actor_kind === "ai" ? " via AI" : ""} · {h.action} {h.entity.replace("_", " ")}
+                    {" · "}{h.action} {h.entity.replace("_", " ")}
                     {h.action === "update" && h.detail && (
                       <div className="muted" style={{ fontSize: "0.8rem" }}>
                         changed {Object.keys(h.detail).join(", ")}

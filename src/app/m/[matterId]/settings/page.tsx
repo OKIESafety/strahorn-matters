@@ -6,19 +6,25 @@ import { signOut } from "@/app/actions";
 import { addPersonAction } from "../actions";
 import { revokeTokenAction, updateMemberAction } from "./actions";
 import { AddMember, ChangePassword, CreateToken } from "./client";
+import { CreateShareLink } from "./share-client";
+import { revokeShareLinkAction } from "./share-actions";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default async function SettingsPage({ params }: { params: Promise<{ matterId: string }> }) {
   const { matterId } = await params;
   const { supabase, user, isOwner, canWrite } = await requireMatter(matterId);
 
-  const [{ data: members }, { data: people }, { data: tokens }, { data: audit }] = await Promise.all([
+  const [{ data: members }, { data: people }, { data: tokens }, { data: audit }, { data: shares }, { data: issues }] = await Promise.all([
     supabase.from("matter_members").select("user_id, role, display_name").eq("matter_id", matterId),
     supabase.from("people").select("id, name, relationship").eq("matter_id", matterId).order("name"),
     supabase.from("api_tokens").select("id, label, created_at, last_used_at, revoked_at").eq("user_id", user.id).order("created_at", { ascending: false }),
     isOwner
       ? supabase.from("audit_log").select("id, actor, actor_kind, action, entity, at").eq("matter_id", matterId).order("at", { ascending: false }).limit(40)
       : Promise.resolve({ data: [] as any[] }),
+    isOwner
+      ? supabase.from("share_links").select("id, label, expires_at, revoked_at, view_count, last_viewed_at").eq("matter_id", matterId).order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as any[] }),
+    supabase.from("issues").select("id, title").eq("matter_id", matterId).order("title"),
   ]);
 
   // Emails for the member list (owner only, via admin)
@@ -101,9 +107,46 @@ export default async function SettingsPage({ params }: { params: Promise<{ matte
         )}
       </div>
 
+      {isOwner && (
+        <div className="card">
+          <h2>Share with your attorney</h2>
+          <p className="muted" style={{ fontSize: "0.9rem" }}>
+            A read-only link to the events in your reports (entries marked “leave out” are never shown). It expires
+            automatically and you can revoke it any time.
+          </p>
+          {(shares ?? []).length > 0 && (
+            <table className="simple" style={{ marginBottom: 12 }}>
+              <tbody>
+                {(shares as any[]).map((l) => {
+                  const expired = Date.parse(l.expires_at) < Date.now();
+                  return (
+                    <tr key={l.id}>
+                      <td>
+                        {l.label}
+                        <div className="muted" style={{ fontSize: "0.8rem" }}>
+                          {l.revoked_at ? "Revoked" : expired ? "Expired" : `Expires ${formatTimestamp(l.expires_at)}`} · viewed {l.view_count}×
+                        </div>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        {!l.revoked_at && !expired && (
+                          <form action={revokeShareLinkAction.bind(null, matterId, l.id)}>
+                            <button className="btn small danger">Revoke</button>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+          <CreateShareLink matterId={matterId} issues={(issues ?? []) as { id: string; title: string }[]} />
+        </div>
+      )}
+
       {canWrite && (
         <div className="card">
-          <h2>AI connector</h2>
+          <h2>Assistant connector</h2>
           <p className="muted" style={{ fontSize: "0.9rem" }}>
             Lets Claude or ChatGPT search this matter and add events for you. Each URL acts as you.
             Revoke it any time.
@@ -147,8 +190,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ matte
                 <tr key={a.id}>
                   <td style={{ whiteSpace: "nowrap" }}>{formatTimestamp(a.at)}</td>
                   <td>
-                    {nameOf(a.actor)}
-                    {a.actor_kind === "ai" ? " via AI" : ""} · {a.action} {a.entity.replace("_", " ")}
+                    {nameOf(a.actor)} · {a.action} {a.entity.replace("_", " ")}
                   </td>
                 </tr>
               ))}

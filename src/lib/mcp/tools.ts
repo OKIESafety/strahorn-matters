@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { createMcpHandler } from "mcp-handler";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { CONFIDENCE_VALUES, EVIDENCE_KINDS, type EvidenceKind } from "@/lib/constants";
+import { CONFIDENCE_VALUES, EVIDENCE_KINDS, TIME_ZONE, type EvidenceKind } from "@/lib/constants";
 import {
   attachEvidence,
   createEvents,
@@ -15,6 +15,8 @@ import {
   storeEvidence,
 } from "@/lib/core";
 import { EVENT_SELECT, loadEvents, shapeEvent } from "@/lib/queries";
+import { formatInstant, loadParents, parentingTimeReport } from "@/lib/time-data";
+import { zonedToUtc } from "@/lib/parenting-time";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -35,6 +37,13 @@ Rules for writing records:
   in chunks, then link events to that evidence_id with an excerpt and page_ref (row/line number).
 - To save an original file (PDF, screenshot, photo) that exists in the conversation, use upload_evidence_file
   (passes the file by reference, up to 45 MB) instead of base64 in upload_evidence.
+- The owner's standing preference: record incidents that support the owner's position. Do not create entries about
+  the owner's own shortcomings unless the owner explicitly asks. Never fabricate or alter facts, quotes or dates.
+- An entry the owner doesn't want in reports can be set exclude_from_reports=true (it stays in the private record).
+  Never delete records to hide them.
+- Parenting time: exchanges (handoffs) are logged with record_exchanges; get_parenting_time compares them with the
+  court-ordered schedule (each parent's share of time, late and missed exchanges). Parent "a" is the owner's side.
+- For appointments, school meetings and activities, list who attended in attended_by.
 - Original evidence can never be edited or deleted. After writing, tell the user what you created and what you skipped.`;
 
 type Ctx = { db: SupabaseClient; userId: string };
@@ -140,6 +149,8 @@ const eventShape = z.object({
   confidence: confidence.optional().describe("Defaults to needs_review for AI-created events"),
   source_ref: z.string().optional().nullable().describe("Human-readable pointer to the source"),
   source_key: z.string().optional().nullable().describe("Stable unique key for this incident from this source; prevents duplicates"),
+  attended_by: z.array(z.string()).optional().describe("Who attended (appointments, school meetings, activities)"),
+  exclude_from_reports: z.boolean().optional().describe("Keep in the private record but leave out of reports"),
   evidence: z
     .array(
       z.object({
@@ -255,6 +266,8 @@ export function registerTools(server: McpServer, ctx: Ctx) {
           confidence: e.confidence,
           evidence_count: e.evidence_count,
           source_ref: e.source_ref,
+          attended_by: e.attended_by,
+          exclude_from_reports: e.exclude_from_reports,
         })),
       });
     })
@@ -310,7 +323,8 @@ export function registerTools(server: McpServer, ctx: Ctx) {
           confidence: e.confidence,
           source_ref: e.source_ref,
           source_key: r.source_key,
-          created_via: e.created_via,
+          attended_by: e.attended_by,
+          exclude_from_reports: e.exclude_from_reports,
           created_at: r.created_at,
           evidence,
           notes,
@@ -379,6 +393,8 @@ export function registerTools(server: McpServer, ctx: Ctx) {
       add_issues: z.array(z.string()).optional().describe("Issue titles; created if missing"),
       remove_issues: z.array(z.string()).optional().describe("Issue titles"),
       add_people: z.array(z.string()).optional(),
+      attended_by: z.array(z.string()).optional().describe("Replaces the attended-by list"),
+      exclude_from_reports: z.boolean().optional(),
     },
     wrap(async (a: any) => {
       const matterId = await eventMatter(ctx, a.event_id);
@@ -395,6 +411,8 @@ export function registerTools(server: McpServer, ctx: Ctx) {
       if (a.time !== undefined) patch.event_time = normalizeTime(a.time);
       if (a.confidence !== undefined) patch.confidence = a.confidence;
       if (a.source_ref !== undefined) patch.source_ref = a.source_ref;
+      if (a.attended_by !== undefined) patch.attended_by = a.attended_by.map((n: string) => n.trim()).filter(Boolean);
+      if (a.exclude_from_reports !== undefined) patch.exclude_from_reports = !!a.exclude_from_reports;
       if (a.add_tags || a.remove_tags) {
         const remove = new Set(normalizeTags(a.remove_tags));
         patch.tags = normalizeTags([...(cur?.tags ?? []), ...(a.add_tags ?? [])]).filter((t) => !remove.has(t));
@@ -579,6 +597,113 @@ export function registerTools(server: McpServer, ctx: Ctx) {
         await attachEvidence(ctx.db, a.matter_id, eventId, [{ evidence_id: id }]);
       }
       return ok({ evidence_id: id });
+    })
+  );
+
+  // ── Parenting time ───────────────────────────────────────────────────────
+  server.tool(
+    "record_exchanges",
+    "Log up to 100 past custody exchanges (e.g. reconstructed from texts): when the children went to parent a (owner) " +
+      "or b, or that a scheduled exchange didn't happen. Each entry needs a stable source_key so re-runs don't duplicate.",
+    {
+      matter_id: z.string().uuid(),
+      exchanges: z
+        .array(
+          z.object({
+            date: dateStr,
+            time: z.string().describe("Local Central time HH:MM (24h) or 9:12 PM"),
+            kind: z.enum(["handoff", "no_show", "late_notice", "arrived"]).optional().describe("Default handoff"),
+            to_parent: z.enum(["a", "b"]).optional().nullable().describe("Who has the children after a handoff"),
+            note: z.string().optional().nullable(),
+            source_ref: z.string().optional().nullable(),
+            source_key: z.string().min(3),
+          })
+        )
+        .min(1)
+        .max(100),
+    },
+    wrap(async (a: any) => {
+      await requireWrite(ctx, a.matter_id);
+      const results: any[] = [];
+      for (const [i, x] of a.exchanges.entries()) {
+        try {
+          const t = normalizeTime(x.time);
+          if (!isValidDate(x.date) || !t) throw new Error("Invalid date or time");
+          const kind = x.kind ?? "handoff";
+          if (kind === "handoff" && !x.to_parent) throw new Error("to_parent is required for a handoff");
+          const { data: existing } = await ctx.db
+            .from("exchanges")
+            .select("id")
+            .eq("matter_id", a.matter_id)
+            .eq("source_key", x.source_key)
+            .maybeSingle();
+          if (existing) {
+            results.push({ index: i, status: "skipped_existing", id: existing.id });
+            continue;
+          }
+          const { data, error } = await ctx.db
+            .from("exchanges")
+            .insert({
+              matter_id: a.matter_id,
+              occurred_at: new Date(zonedToUtc(x.date, t, TIME_ZONE)).toISOString(),
+              kind,
+              to_parent: x.to_parent ?? null,
+              recorded_live: false,
+              note: x.note ?? null,
+              source_ref: x.source_ref ?? null,
+              source_key: x.source_key,
+              recorded_by: ctx.userId,
+              recorded_via: "ai",
+            })
+            .select("id")
+            .single();
+          if (error) throw new Error(error.message);
+          results.push({ index: i, status: "created", id: data.id });
+        } catch (e) {
+          results.push({ index: i, status: "error", error: (e as Error).message });
+        }
+      }
+      return ok({ created: results.filter((r) => r.status === "created").length, results });
+    })
+  );
+
+  server.tool(
+    "get_parenting_time",
+    "Compare recorded exchanges with the court-ordered schedule for a date range: each parent's share of scheduled vs " +
+      "actual time, and every late, early or missed exchange.",
+    {
+      matter_id: z.string().uuid(),
+      date_from: dateStr,
+      date_to: dateStr,
+      include_handoffs: z.boolean().optional().describe("Include the per-exchange list (default true)"),
+    },
+    wrap(async (a: any) => {
+      await requireRead(ctx, a.matter_id);
+      const parents = await loadParents(ctx.db, a.matter_id);
+      const { report, schedules } = await parentingTimeReport(ctx.db, a.matter_id, a.date_from, a.date_to);
+      if (!schedules.length) return ok({ error: "No schedule set up yet. The owner adds it under Time → Edit schedule." });
+      const name = (s: "a" | "b") => (s === "a" ? parents.a : parents.b);
+      return ok({
+        parents,
+        period: { from: a.date_from, to: a.date_to },
+        scheduled_pct: { [parents.a]: report.scheduled_pct.a, [parents.b]: report.scheduled_pct.b },
+        actual_pct: { [parents.a]: report.actual_pct.a, [parents.b]: report.actual_pct.b },
+        scheduled_hours: { [parents.a]: report.scheduled_hours.a, [parents.b]: report.scheduled_hours.b },
+        actual_hours: { [parents.a]: report.actual_hours.a, [parents.b]: report.actual_hours.b },
+        counts: report.counts,
+        late_minutes_total: report.late_minutes_total,
+        handoffs:
+          a.include_handoffs === false
+            ? undefined
+            : report.handoffs.map((h) => ({
+                scheduled: formatInstant(h.scheduled_at),
+                to: name(h.to),
+                status: h.status,
+                minutes_off: h.minutes_off,
+                actual: h.actual_at ? formatInstant(h.actual_at) : null,
+              })),
+        extra_exchanges: report.extra_exchanges.map((x) => ({ at: formatInstant(x.at), to: name(x.to) })),
+      });
     })
   );
 

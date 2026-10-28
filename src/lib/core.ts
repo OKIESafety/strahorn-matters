@@ -19,6 +19,8 @@ export type EventInput = {
   confidence?: Confidence;
   source_ref?: string | null;
   source_key?: string | null;
+  attended_by?: string[];
+  exclude_from_reports?: boolean;
   evidence?: { evidence_id: string; excerpt?: string | null; page_ref?: string | null }[];
 };
 
@@ -207,6 +209,8 @@ export async function createEvents(
           confidence: e.confidence ?? (actor.via === "ai" ? "needs_review" : "reported"),
           source_ref: e.source_ref?.trim() || null,
           source_key: sourceKey,
+          attended_by: (e.attended_by ?? []).map((n) => n.trim()).filter(Boolean).slice(0, 20),
+          exclude_from_reports: !!e.exclude_from_reports,
           created_by: actor.userId,
           created_via: actor.via,
         })

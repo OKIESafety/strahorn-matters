@@ -65,7 +65,6 @@ export function EvidenceList({ items }: { items: EvidenceView[] }) {
                   <div>{e.original_filename}</div>
                   <small className="muted">
                     ID {shortId(e.id)} · uploaded {formatTimestamp(e.uploaded_at)}
-                    {e.uploaded_via === "ai" ? " via AI" : ""}
                   </small>
                 </td>
                 <td className="mono" style={{ wordBreak: "break-all" }}>SHA-256 {e.sha256}</td>

@@ -33,7 +33,7 @@ export default async function IssuesPage({ params }: { params: Promise<{ matterI
           </div>
           {i.description && <div className="event-summary">{i.description}</div>}
           <div className="row" style={{ marginTop: 6, gap: 12, fontSize: "0.85rem" }}>
-            <span className="muted">{i.created_via === "ai" ? "Created by AI" : ""}</span>
+            
           </div>
         </Link>
       ))}

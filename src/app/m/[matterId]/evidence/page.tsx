@@ -70,7 +70,6 @@ export default async function EvidencePage({
                 {r.description && <div style={{ fontSize: "0.88rem" }}>{r.description}</div>}
                 <small className="muted">
                   {r.kind.replace("_", " ")} · {formatBytes(r.size_bytes)} · {formatTimestamp(r.uploaded_at)}
-                  {r.uploaded_via === "ai" ? " · via AI" : ""}
                 </small>
               </td>
               <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>

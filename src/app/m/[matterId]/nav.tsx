@@ -7,8 +7,11 @@ export function Nav({ base, isOwner }: { base: string; isOwner: boolean }) {
   const path = usePathname();
   const items = [
     { href: base, label: "Timeline", exact: true },
+    { href: `${base}/time`, label: "Time" },
     { href: `${base}/issues`, label: "Issues" },
     { href: `${base}/evidence`, label: "Evidence" },
+    { href: `${base}/expenses`, label: "Expenses" },
+    { href: `${base}/insights`, label: "Insights" },
     { href: `${base}/report`, label: "Report" },
     { href: `${base}/settings`, label: isOwner ? "Settings" : "Account" },
   ];

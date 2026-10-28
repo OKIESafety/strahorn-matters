@@ -3,7 +3,7 @@ export const CONFIDENCE = [
   { value: "corroborated", label: "Corroborated", hint: "Backed by multiple independent sources" },
   { value: "reported", label: "Reported", hint: "Witnessed or reported, not yet documented" },
   { value: "disputed", label: "Disputed", hint: "The parties give different accounts" },
-  { value: "needs_review", label: "Needs review", hint: "AI flagged it; a person should check" },
+  { value: "needs_review", label: "Needs review", hint: "Not yet checked against the source" },
 ] as const;
 
 export type Confidence = (typeof CONFIDENCE)[number]["value"];

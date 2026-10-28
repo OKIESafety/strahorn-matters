@@ -34,6 +34,7 @@ export function NewEventForm({
   const [selPeople, setSelPeople] = useState<string[]>([]);
   const [newPerson, setNewPerson] = useState("");
   const [selTags, setSelTags] = useState<string[]>([]);
+  const [selAttended, setSelAttended] = useState<string[]>([]);
   const [customTag, setCustomTag] = useState("");
   const [confidence, setConfidence] = useState("reported");
   const [files, setFiles] = useState<File[]>([]);
@@ -57,6 +58,7 @@ export function NewEventForm({
         issues: [...selIssues, newIssue.trim()].filter(Boolean),
         people: [...selPeople, ...newPerson.split(",").map((s) => s.trim())].filter(Boolean),
         tags: [...selTags, ...customTag.split(",").map((s) => s.trim())].filter(Boolean),
+        attended_by: selAttended,
         confidence,
         files: uploaded,
       });
@@ -117,7 +119,7 @@ export function NewEventForm({
       </div>
 
       <details className="card">
-        <summary style={{ cursor: "pointer", fontWeight: 600 }}>More: issue, tags, title, confidence</summary>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>More: issue, tags, who attended, confidence</summary>
         <div style={{ marginTop: 12 }}>
           <div className="field">
             <span className="label">Issue</span>
@@ -156,6 +158,20 @@ export function NewEventForm({
               onChange={(e) => setCustomTag(e.target.value)}
             />
           </div>
+
+          {people.length > 0 && (
+            <div className="field">
+              <span className="label">Who attended? (appointments, school, activities)</span>
+              <div className="chips">
+                {people.map((p) => (
+                  <label key={p} className="chip">
+                    <input type="checkbox" checked={selAttended.includes(p)} onChange={() => setSelAttended(toggle(selAttended, p))} />
+                    {p}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="field">
             <label htmlFor="title">Short title (optional)</label>

@@ -23,7 +23,7 @@ export function EventCard({ e, href }: { e: EventRow; href: string }) {
       </div>
       <div className="event-title">{e.title}</div>
       {e.summary && <div className="event-summary">{e.summary}</div>}
-      {(e.issues.length > 0 || e.tags.length > 0 || e.created_via === "ai") && (
+      {(e.issues.length > 0 || e.tags.length > 0 || e.exclude_from_reports) && (
         <div className="chips" style={{ marginTop: 8 }}>
           {e.issues.map((i) => (
             <span key={i.id} className="chip issue">{i.title}</span>
@@ -31,7 +31,7 @@ export function EventCard({ e, href }: { e: EventRow; href: string }) {
           {e.tags.map((t) => (
             <span key={t} className="chip">#{t}</span>
           ))}
-          {e.created_via === "ai" && <span className="chip ai">added by AI</span>}
+          {e.exclude_from_reports && <span className="chip ai">left out of reports</span>}
         </div>
       )}
     </Link>

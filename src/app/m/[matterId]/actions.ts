@@ -64,6 +64,7 @@ export type NewEventInput = {
   issues: string[];
   people: string[];
   tags: string[];
+  attended_by: string[];
   confidence: string;
   files: UploadedFile[];
 };
@@ -95,6 +96,7 @@ export async function createEventAction(matterId: string, input: NewEventInput):
           tags: input.tags,
           issues: input.issues,
           people: input.people,
+          attended_by: input.attended_by,
           confidence: (CONFIDENCE_VALUES as string[]).includes(input.confidence)
             ? (input.confidence as Confidence)
             : "reported",
@@ -152,6 +154,7 @@ export async function updateEventAction(matterId: string, eventId: string, formD
       confidence: (CONFIDENCE_VALUES as string[]).includes(confidence) ? confidence : "reported",
       tags: normalizeTags(String(formData.get("tags") ?? "").split(",")),
       source_ref: String(formData.get("source_ref") ?? "").trim() || null,
+      attended_by: formData.getAll("attended").map(String).filter(Boolean).slice(0, 20),
     })
     .eq("id", eventId)
     .eq("matter_id", matterId);
@@ -248,4 +251,16 @@ export async function addPersonAction(matterId: string, formData: FormData) {
   const relationship = String(formData.get("relationship") ?? "").trim();
   if (relationship) await supabase.from("people").update({ relationship }).eq("id", map.get(name.toLowerCase())!);
   revalidatePath(`/m/${matterId}/settings`);
+}
+
+export async function setExcludeAction(matterId: string, eventId: string, exclude: boolean) {
+  const { supabase, canWrite } = await requireMatter(matterId);
+  if (!canWrite) throw new Error("Read-only access");
+  const { error } = await supabase
+    .from("events")
+    .update({ exclude_from_reports: exclude })
+    .eq("id", eventId)
+    .eq("matter_id", matterId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/m/${matterId}`, "layout");
 }

@@ -165,6 +165,27 @@ table.simple td, table.simple th { text-align: left; padding: 8px 6px; border-bo
 .preview-grid .p .x { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.6); color: #fff; border: 0; border-radius: 999px; width: 24px; height: 24px; cursor: pointer; }
 .preview-grid .p .name { padding: 4px; word-break: break-all; }
 
+/* Parenting time, stats, charts */
+.bar { position: relative; height: 10px; background: var(--surface-2); border-radius: 999px; margin: 4px 0; overflow: visible; }
+.bar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 999px; }
+.bar-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.stat { display: flex; flex-direction: column; gap: 2px; margin: 0; }
+.stat b { font-size: 1.5rem; line-height: 1.1; }
+.stat span { font-size: 0.82rem; color: var(--muted); }
+.btn.big { padding: 18px; font-size: 1.1rem; }
+.chip.st-late, .chip.st-no_show { color: var(--danger); border-color: var(--danger); background: transparent; }
+.chip.st-on_time { background: var(--accent-soft); color: var(--accent); }
+.chip.st-early { color: var(--warn); }
+
+/* Exhibit packet */
+.cover { padding: 24px 0; }
+.verify-box { display: flex; gap: 16px; align-items: flex-start; border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+.verify-box .qr { width: 110px; min-width: 110px; background: #fff; padding: 6px; border-radius: 6px; }
+.verify-box .qr svg { width: 100%; height: auto; display: block; }
+.exhibit-evidence { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.exhibit-img { max-width: 100%; max-height: 520px; display: block; margin: 8px 0; border: 1px solid var(--border); border-radius: 6px; }
+
 /* Print / report */
 .print-only { display: none; }
 @media print {
@@ -175,4 +196,6 @@ table.simple td, table.simple th { text-align: left; padding: 8px 6px; border-bo
   .container { max-width: none; padding: 0; }
   .card { box-shadow: none; break-inside: avoid; }
   a { color: #000; }
+  .page-break { break-before: page; }
+  .exhibit-img { max-height: 7.5in; }
 }

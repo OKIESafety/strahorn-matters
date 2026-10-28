@@ -25,10 +25,12 @@ export type EventRow = {
   issues: { id: string; title: string }[];
   people: { id: string; name: string }[];
   evidence_count: number;
+  attended_by: string[];
+  exclude_from_reports: boolean;
 };
 
 export const EVENT_SELECT =
-  "id, event_date, event_time, title, summary, details, tags, confidence, created_via, source_ref, event_issues(issues(id, title)), event_people(people(id, name)), event_evidence(count)";
+  "id, event_date, event_time, title, summary, details, tags, confidence, created_via, source_ref, attended_by, exclude_from_reports, event_issues(issues(id, title)), event_people(people(id, name)), event_evidence(count)";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function shapeEvent(r: any): EventRow {
@@ -46,6 +48,8 @@ export function shapeEvent(r: any): EventRow {
     issues: (r.event_issues ?? []).map((x: any) => x.issues).filter(Boolean),
     people: (r.event_people ?? []).map((x: any) => x.people).filter(Boolean),
     evidence_count: r.event_evidence?.[0]?.count ?? 0,
+    attended_by: r.attended_by ?? [],
+    exclude_from_reports: !!r.exclude_from_reports,
   };
 }
 
@@ -53,7 +57,7 @@ export async function loadEvents(
   db: SupabaseClient,
   matterId: string,
   f: EventFilters,
-  opts: { limit?: number; offset?: number; ascending?: boolean } = {}
+  opts: { limit?: number; offset?: number; ascending?: boolean; reportOnly?: boolean } = {}
 ): Promise<{ rows: EventRow[]; total: number }> {
   let restrictIds: string[] | null = null;
 
@@ -79,6 +83,7 @@ export async function loadEvents(
   if (f.from) query = query.gte("event_date", f.from);
   if (f.to) query = query.lte("event_date", f.to);
   if (f.confidence) query = query.eq("confidence", f.confidence);
+  if (opts.reportOnly) query = query.eq("exclude_from_reports", false);
 
   const asc = opts.ascending ?? false;
   const limit = opts.limit ?? 500;

@@ -35,7 +35,7 @@ export default async function Timeline({
       {sp.saved && <div className="notice">Saved.</div>}
       {!f.confidence && (reviewCount ?? 0) > 0 && (
         <Link href={`${base}?confidence=needs_review`} className="notice warn" style={{ display: "block" }}>
-          {reviewCount} AI-added event{reviewCount === 1 ? "" : "s"} need a quick review →
+          {reviewCount} event{reviewCount === 1 ? "" : "s"} still need{reviewCount === 1 ? "s" : ""} a quick review →
         </Link>
       )}
 
