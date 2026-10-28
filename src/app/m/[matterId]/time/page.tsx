@@ -83,7 +83,7 @@ export default async function TimePage({
         <h1>Parenting time</h1>
         {canWrite && (
           <Link href={`${base}/checkin`} className="btn primary">
-            Check in
+            Girls late?
           </Link>
         )}
       </div>
@@ -147,16 +147,9 @@ export default async function TimePage({
               <div className="card stat"><b>{r.counts.no_show}</b><span>didn&apos;t happen</span></div>
               <div className="card stat"><b>{r.extra_exchanges.length}</b><span>extra / unscheduled</span></div>
             </div>
-            {r.counts.unrecorded > 0 && (
-              <p className="muted" style={{ fontSize: "0.88rem" }}>
-                {r.counts.unrecorded} scheduled exchange{r.counts.unrecorded === 1 ? " has" : "s have"} no check-in
-                and {r.counts.unrecorded === 1 ? "is" : "are"} counted as on schedule.
-                {canWrite && (
-                  <>
-                    {" "}
-                    <Link href={`${base}/checkin#past`}>Add past exchanges</Link>
-                  </>
-                )}
+            <p className="muted" style={{ fontSize: "0.88rem" }}>
+              Exchanges follow the court-ordered schedule unless you log that one was late or didn&apos;t happen.
+            </p>
               </p>
             )}
 

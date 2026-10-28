@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { computeParentingTime, type Exchange, type Override, type Schedule, zonedToUtc } from "./parenting-time";
+import { applyOverrides, computeParentingTime, scheduledTransitions, type Exchange, type Override, type Schedule, zonedToUtc } from "./parenting-time";
 import { TIME_ZONE } from "./constants";
 
 export type Parents = { a: string; b: string };
@@ -66,4 +66,17 @@ export function formatInstant(ms: number) {
     minute: "2-digit",
     timeZone: TIME_ZONE,
   });
+}
+
+/** Scheduled handoffs (with agreed changes applied) between two instants. */
+export async function scheduledHandoffs(db: SupabaseClient, matterId: string, fromMs: number, toMs: number) {
+  const [{ data: schedules }, { data: overrides }] = await Promise.all([
+    db.from("schedules").select("*").eq("matter_id", matterId),
+    db.from("schedule_overrides").select("*").eq("matter_id", matterId),
+  ]);
+  const all = applyOverrides(
+    scheduledTransitions((schedules ?? []) as Schedule[], fromMs, toMs, TIME_ZONE),
+    (overrides ?? []) as Override[]
+  );
+  return all.filter((t) => t.at >= fromMs && t.at <= toMs);
 }
