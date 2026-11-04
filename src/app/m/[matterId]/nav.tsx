@@ -8,6 +8,7 @@ export function Nav({ base, isOwner }: { base: string; isOwner: boolean }) {
   const items = [
     { href: base, label: "Timeline", exact: true },
     { href: `${base}/time`, label: "Time" },
+    { href: `${base}/order`, label: "Court order" },
     { href: `${base}/issues`, label: "Issues" },
     { href: `${base}/evidence`, label: "Evidence" },
     { href: `${base}/expenses`, label: "Expenses" },

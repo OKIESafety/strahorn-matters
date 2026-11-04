@@ -28,7 +28,7 @@ async function handle(req: Request, ctx: { params: Promise<{ token: string; tran
   await db.from("api_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", row.id);
 
   const handler = createMcpHandler(
-    (server) => registerTools(server, { db, userId: row.user_id }),
+    (server) => registerTools(server, { db, userId: row.user_id, origin: new URL(req.url).origin }),
     {
       serverInfo: { name: "strahorn-matters", version: "0.1.0" },
       instructions: SERVER_INSTRUCTIONS,

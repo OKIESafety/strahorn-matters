@@ -1,9 +1,10 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { requireMatter } from "@/lib/access";
 import { readFilters } from "@/components/filters";
-import { buildExportItems, loadReportData, manifestHash } from "@/lib/report-data";
+import { createPacket } from "@/lib/packet";
 
 export async function createExportAction(matterId: string, formData: FormData) {
   const { supabase, user, matter } = await requireMatter(matterId);
@@ -12,24 +13,16 @@ export async function createExportAction(matterId: string, formData: FormData) {
     const v = formData.get(k);
     if (typeof v === "string" && v) raw[k] = v;
   }
-  const f = readFilters(raw);
-  const { rows, evByEvent } = await loadReportData(supabase, matterId, f);
-  if (!rows.length) throw new Error("No events match these filters");
-  const items = buildExportItems(rows, evByEvent);
-  const title = String(formData.get("title") ?? "").trim() || `${matter.title} — Exhibits`;
-
-  const { data, error } = await supabase
-    .from("exports")
-    .insert({
-      matter_id: matterId,
-      title,
-      filters: f,
-      items,
-      manifest_sha256: manifestHash(items),
-      created_by: user.id,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-  redirect(`/m/${matterId}/exports/${data.id}`);
+  const summary = String(formData.get("summary") ?? "").trim();
+  // Remember the latest summary so it's there next time
+  await supabase.from("matters").update({ report_summary: summary || null }).eq("id", matterId);
+  const id = await createPacket(supabase, {
+    matterId,
+    userId: user.id,
+    title: String(formData.get("title") ?? "").trim() || `${matter.title} — Exhibits`,
+    filters: readFilters(raw),
+    summary: summary || null,
+  });
+  revalidatePath(`/m/${matterId}/report`);
+  redirect(`/m/${matterId}/exports/${id}`);
 }

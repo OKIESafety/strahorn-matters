@@ -19,11 +19,12 @@ export default async function ReportPage({
   const f = readFilters(await searchParams);
   const { supabase, matter } = await requireMatter(matterId);
 
-  const [{ rows, total, evByEvent }, opts, { data: exports }, { count: leftOut }] = await Promise.all([
+  const [{ rows, total, evByEvent }, opts, { data: exports }, { count: leftOut }, { data: mrow }] = await Promise.all([
     loadReportData(supabase, matterId, f),
     loadFilterOptions(supabase, matterId),
     supabase.from("exports").select("id, title, created_at, items").eq("matter_id", matterId).order("created_at", { ascending: false }).limit(10),
     supabase.from("events").select("id", { count: "exact", head: true }).eq("matter_id", matterId).eq("exclude_from_reports", true),
+    supabase.from("matters").select("report_summary").eq("id", matterId).single(),
   ]);
 
   const issueName = f.issue ? opts.issues.find((i) => i.id === f.issue)?.title : null;
@@ -48,19 +49,29 @@ export default async function ReportPage({
         <Filters f={f} opts={opts} action={`/m/${matterId}/report`} />
 
         <form action={exportAction} className="card">
-          <h3>Exhibit packet</h3>
+          <h3>Attorney report</h3>
           {Object.entries(f).map(([k, v]) => (v ? <input key={k} type="hidden" name={k} value={v} /> : null))}
           <div className="field">
             <label htmlFor="ptitle">Title</label>
-            <input id="ptitle" name="title" type="text" defaultValue={`${matter.title}${issueName ? ` — ${issueName}` : ""} — Exhibits`} />
+            <input id="ptitle" name="title" type="text" defaultValue={`${matter.title}${issueName ? ` — ${issueName}` : ""} — Report to Counsel`} />
+          </div>
+          <div className="field">
+            <label htmlFor="psum">Summary for your attorney</label>
+            <textarea
+              id="psum"
+              name="summary"
+              defaultValue={mrow?.report_summary ?? ""}
+              placeholder="What this report shows and why it matters. Or ask ChatGPT: “Create an attorney report in Strahorn Matters on late exchanges with a summary.”"
+              style={{ minHeight: 140 }}
+            />
           </div>
           <div className="row">
-            <button className="btn primary" disabled={!rows.length}>Create exhibit packet ({rows.length})</button>
+            <button className="btn primary" disabled={!rows.length}>Create report ({rows.length} exhibits)</button>
             <PrintButton />
           </div>
           <small className="muted">
-            The packet is a frozen snapshot with a cover page, index, numbered exhibits, photos, and a QR code anyone can
-            scan to confirm nothing was altered.
+            Includes a cover page, your summary, what the court order says, parenting-time and pattern charts, an exhibit
+            index, numbered exhibits with photos, and a QR code that proves nothing was changed afterward.
           </small>
         </form>
 

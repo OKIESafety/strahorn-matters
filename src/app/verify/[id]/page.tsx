@@ -19,11 +19,18 @@ export default async function VerifyPage({
   const { check } = await searchParams;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const db = createAdminClient();
-  const { data: ex } = await db.from("exports").select("id, title, items, manifest_sha256, created_at").eq("id", id).maybeSingle();
+  const { data: ex } = await db
+    .from("exports")
+    .select("id, title, items, manifest_sha256, created_at, summary, orders, stats, manifest_version")
+    .eq("id", id)
+    .maybeSingle();
   if (!ex) notFound();
 
   const items = ex.items as ExportItem[];
-  const packetIntact = manifestHash(items) === ex.manifest_sha256;
+  const packetIntact =
+    (ex.manifest_version === 2
+      ? manifestHash(items, { summary: ex.summary ?? null, orders: ex.orders, stats: ex.stats })
+      : manifestHash(items)) === ex.manifest_sha256;
   const files = items.flatMap((i) => i.evidence.map((v) => ({ ...v, exhibit: i.exhibit })));
   const ids = Array.from(new Set(files.map((f) => f.id)));
   const { data: ev } = ids.length
@@ -57,11 +64,11 @@ export default async function VerifyPage({
 
   return (
     <main className="container" style={{ paddingTop: 24 }}>
-      <h1>Exhibit packet verification</h1>
+      <h1>Report verification</h1>
       <div className={`notice ${ok ? "" : "error"}`} style={{ fontSize: "1rem" }}>
         {ok
-          ? "Verified: this packet and its files match the records stored when it was created."
-          : "Warning: something in this packet does not match the stored records."}
+          ? "Verified: this report, its summary, charts and every file match what was recorded when it was created."
+          : "Warning: something in this report does not match the stored records."}
       </div>
       <dl className="kv card">
         <dt>Title</dt>

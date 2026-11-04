@@ -186,6 +186,35 @@ table.simple td, table.simple th { text-align: left; padding: 8px 6px; border-bo
 .exhibit-evidence { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); }
 .exhibit-img { max-width: 100%; max-height: 520px; display: block; margin: 8px 0; border: 1px solid var(--border); border-radius: 6px; }
 
+/* Court order + attorney report */
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.case-caption { font-family: Georgia, "Times New Roman", serif; font-size: 1.05rem; margin: 4px 0; }
+.glance { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.glance-item { border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 12px; font-size: 0.92rem; background: var(--surface); }
+.glance-title { font-weight: 700; margin-bottom: 2px; }
+.cite { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+.provision { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.94rem; }
+.provision:last-child { border-bottom: 0; }
+.packet { font-size: 0.97rem; }
+.cover-page { padding: 28px 0 12px; }
+.report-title { font-family: Georgia, "Times New Roman", serif; font-size: 2rem; font-weight: 600; margin: 8px 0 10px; line-height: 1.15; }
+.cover-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 20px; }
+.cover-figures > div, .stat-row > div { border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; background: var(--surface); }
+.cover-figures b, .stat-row b { font-size: 1.6rem; line-height: 1.1; font-family: Georgia, serif; }
+.cover-figures b.small { font-size: 1.05rem; }
+.cover-figures span, .stat-row span { font-size: 0.8rem; color: var(--muted); }
+.report-section { margin-top: 28px; }
+.section-title { font-family: Georgia, "Times New Roman", serif; font-size: 1.35rem; display: flex; align-items: center; gap: 10px; border-bottom: 2px solid var(--accent); padding-bottom: 6px; margin-bottom: 14px; }
+.section-title span { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 0.9rem; font-family: inherit; }
+.summary-text { white-space: pre-wrap; line-height: 1.6; font-size: 1rem; }
+.chart-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; background: var(--surface); break-inside: avoid; }
+.chart-card h3 { margin-bottom: 2px; }
+.chart-card h4 { margin: 14px 0 4px; font-size: 0.95rem; }
+.chart-note { font-size: 0.8rem; margin-bottom: 8px; }
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 8px; }
+.index-table td:first-child { font-weight: 700; }
+.report-foot { font-size: 0.8rem; margin-top: 24px; }
+
 /* Print / report */
 .print-only { display: none; }
 @media print {
@@ -197,5 +226,9 @@ table.simple td, table.simple th { text-align: left; padding: 8px 6px; border-bo
   .card { box-shadow: none; break-inside: avoid; }
   a { color: #000; }
   .page-break { break-before: page; }
+  .packet { font-size: 10.5pt; }
+  .glance-item, .chart-card, .cover-figures > div, .stat-row > div { background: #fff; }
+  .section-title span { background: #2f5d50 !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  svg { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .exhibit-img { max-height: 7.5in; }
 }

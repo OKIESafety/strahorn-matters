@@ -17,6 +17,8 @@ import {
 import { EVENT_SELECT, loadEvents, shapeEvent } from "@/lib/queries";
 import { formatInstant, loadParents, parentingTimeReport } from "@/lib/time-data";
 import { zonedToUtc } from "@/lib/parenting-time";
+import { loadCase, loadOrders } from "@/lib/orders";
+import { createPacket } from "@/lib/packet";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -44,9 +46,19 @@ Rules for writing records:
 - Parenting time: exchanges (handoffs) are logged with record_exchanges; get_parenting_time compares them with the
   court-ordered schedule (each parent's share of time, late and missed exchanges). Parent "a" is the owner's side.
 - For appointments, school meetings and activities, list who attended in attended_by.
+- The court order (decree and custody plan) is stored as cited provisions: call get_court_order before describing
+  custody, primary residence, decision-making, the schedule, or how disputes go back to court. Quote it; don't paraphrase
+  it into legal conclusions.
+- Attorney reports: when asked for a report for the attorney, (1) call get_court_order, get_matter and, if a schedule
+  exists, get_parenting_time; (2) search_events / get_events for the requested issue or dates; (3) write a summary of
+  150–400 words: what the report covers, the pattern the exhibits show with dates and counts, and the relevant order
+  terms with their citations (e.g. mediation under Joint Custody Plan ¶16 before court; Mother is primary residential
+  parent under ¶7(a)). Factual and neutral, refer to exhibits by date, no legal advice or conclusions about outcome;
+  (4) call create_report_packet with the same filters and the summary, and give the user the link.
+- Always refer to the owner as Jonathan (never "Johnny").
 - Original evidence can never be edited or deleted. After writing, tell the user what you created and what you skipped.`;
 
-type Ctx = { db: SupabaseClient; userId: string };
+type Ctx = { db: SupabaseClient; userId: string; origin?: string };
 type McpServer = Parameters<Parameters<typeof createMcpHandler>[0]>[0];
 
 const ok = (obj: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(obj, null, 1) }] });
@@ -597,6 +609,68 @@ export function registerTools(server: McpServer, ctx: Ctx) {
         await attachEvidence(ctx.db, a.matter_id, eventId, [{ evidence_id: id }]);
       }
       return ok({ evidence_id: id });
+    })
+  );
+
+  // ── Court order & attorney reports ───────────────────────────────────────
+  server.tool(
+    "get_court_order",
+    "Case caption and every stored provision of the decree and joint custody plan (custody, primary residence, " +
+      "decision-making, schedule, holidays, mediation and going back to court, support, conduct), with citations.",
+    { matter_id: z.string().uuid() },
+    wrap(async (a: any) => {
+      await requireRead(ctx, a.matter_id);
+      const [c, list] = await Promise.all([loadCase(ctx.db, a.matter_id), loadOrders(ctx.db, a.matter_id)]);
+      return ok({
+        case: { title: c.title, case_number: c.case_number, court: c.court, caption: c.caption },
+        provisions: list.map((p) => ({
+          category: p.category,
+          title: p.title,
+          summary: p.summary,
+          quote: p.quote,
+          citation: p.citation,
+          key_fact: p.key_fact,
+        })),
+      });
+    })
+  );
+
+  server.tool(
+    "create_report_packet",
+    "Create the attorney report: cover page, your summary, the court-order terms, parenting-time and pattern charts, " +
+      "exhibit index and numbered exhibits with a verification QR code. Entries marked leave-out are never included. " +
+      "Returns a link the user opens and prints or saves as PDF.",
+    {
+      matter_id: z.string().uuid(),
+      title: z.string().min(3).max(200).describe("e.g. 'Late Exchanges, Jan–Oct 2026 — Report to Counsel'"),
+      summary: z.string().min(40).max(8000).describe("150–400 word factual summary written for the attorney"),
+      issue_id: z.string().uuid().optional(),
+      tag: z.string().optional(),
+      person_id: z.string().uuid().optional(),
+      date_from: dateStr.optional(),
+      date_to: dateStr.optional(),
+      query: z.string().optional(),
+    },
+    wrap(async (a: any) => {
+      await requireRead(ctx, a.matter_id);
+      const filters = {
+        issue: a.issue_id,
+        tag: a.tag,
+        person: a.person_id,
+        from: a.date_from,
+        to: a.date_to,
+        q: a.query,
+      };
+      const id = await createPacket(ctx.db, {
+        matterId: a.matter_id,
+        userId: ctx.userId,
+        title: a.title,
+        filters,
+        summary: a.summary,
+      });
+      await ctx.db.from("matters").update({ report_summary: a.summary }).eq("id", a.matter_id);
+      const base = ctx.origin ?? "https://strahorn-matters.vercel.app";
+      return ok({ report_id: id, url: `${base}/m/${a.matter_id}/exports/${id}`, verify_url: `${base}/verify/${id}` });
     })
   );
 

@@ -96,7 +96,8 @@ export function buildExportItems(rows: EventRow[], evByEvent: Map<string, Report
   }));
 }
 
-/** Deterministic fingerprint of an export's contents. */
-export function manifestHash(items: ExportItem[]) {
-  return createHash("sha256").update(JSON.stringify(items)).digest("hex");
+/** Deterministic fingerprint of an export's contents (v1: exhibits only; v2: exhibits + summary + order terms + charts). */
+export function manifestHash(items: ExportItem[], extra?: { summary: string | null; orders: unknown; stats: unknown }) {
+  const payload = extra ? { items, summary: extra.summary, orders: extra.orders, stats: extra.stats } : items;
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
