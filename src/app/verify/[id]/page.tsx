@@ -28,11 +28,11 @@ export default async function VerifyPage({
 
   const items = ex.items as ExportItem[];
   const packetIntact =
-    (ex.manifest_version === 3
-      ? manifestHash(items, { summary: ex.summary ?? null, orders: ex.orders, stats: ex.stats, issue_summaries: ex.issue_summaries })
-      : ex.manifest_version === 2
-        ? manifestHash(items, { summary: ex.summary ?? null, orders: ex.orders, stats: ex.stats })
-        : manifestHash(items)) === ex.manifest_sha256;
+    manifestHash(
+      items,
+      { summary: ex.summary ?? null, orders: ex.orders, stats: ex.stats, issue_summaries: ex.issue_summaries ?? null },
+      ex.manifest_version ?? 1
+    ) === ex.manifest_sha256;
   const files = items.flatMap((i) => i.evidence.map((v) => ({ ...v, exhibit: i.exhibit })));
   const ids = Array.from(new Set(files.map((f) => f.id)));
   const { data: ev } = ids.length

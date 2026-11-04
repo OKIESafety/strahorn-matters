@@ -141,15 +141,89 @@ export function buildExportItems(rows: EventRow[], evByEvent: Map<string, Report
   }));
 }
 
-/** Deterministic fingerprint of an export's contents (v1: exhibits only; v2: exhibits + summary + order terms + charts). */
+/** JSON with object keys sorted at every level, so the database can't change the fingerprint by reordering fields. */
+export function canonicalJson(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
+  if (Array.isArray(v)) return `[${v.map((x) => (x === undefined ? "null" : canonicalJson(x))).join(",")}]`;
+  const o = v as Record<string, unknown>;
+  return `{${Object.keys(o)
+    .filter((k) => o[k] !== undefined)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`)
+    .join(",")}}`;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// Packets made before v3 were fingerprinted with fields in the order they were built; the database stores JSON with
+// its own key order, so rebuild that order to check them.
+const pick = (o: any, keys: string[]) => {
+  if (!o || typeof o !== "object") return o;
+  const out: any = {};
+  for (const k of keys) if (Object.prototype.hasOwnProperty.call(o, k)) out[k] = o[k];
+  return out;
+};
+const ITEM_KEYS = ["exhibit", "event_id", "date", "time", "title", "summary", "details", "people", "attended_by", "issues", "group", "source_ref", "evidence"];
+const EV_KEYS = ["id", "filename", "sha256", "mime_type", "excerpt", "page_ref"];
+const ORDER_KEYS = ["category", "title", "summary", "quote", "citation", "key_fact"];
+const ab = (x: any) => pick(x, ["a", "b"]);
+function legacyItems(items: any[]) {
+  return items.map((i) => {
+    const o = pick(i, ITEM_KEYS);
+    if (Array.isArray(o.evidence)) o.evidence = o.evidence.map((v: any) => pick(v, EV_KEYS));
+    return o;
+  });
+}
+function legacyStats(s: any) {
+  if (!s) return s;
+  const fl = (a: any[]) => (a ?? []).map((x) => pick(x, ["label", "value"]));
+  const p = s.parenting
+    ? {
+        ...pick(s.parenting, ["from", "to"]),
+        parents: ab(s.parenting.parents),
+        scheduled_pct: ab(s.parenting.scheduled_pct),
+        actual_pct: ab(s.parenting.actual_pct),
+        scheduled_hours: ab(s.parenting.scheduled_hours),
+        actual_hours: ab(s.parenting.actual_hours),
+        ...pick(s.parenting, ["late", "late_minutes", "no_show"]),
+        late_by_month: fl(s.parenting.late_by_month),
+      }
+    : s.parenting;
+  return {
+    totals: pick(s.totals, ["events", "files"]),
+    range: s.range ? pick(s.range, ["from", "to"]) : s.range,
+    per_month: fl(s.per_month),
+    per_issue: fl(s.per_issue),
+    parenting: p,
+  };
+}
+
+/**
+ * Fingerprint of a report. v3+: canonical (sorted-key) JSON of exhibits, summary, order terms, charts and issue
+ * summaries. v1 (exhibits only) and v2 (+ summary, terms, charts) use their original field order.
+ */
 export function manifestHash(
   items: ExportItem[],
-  extra?: { summary: string | null; orders: unknown; stats: unknown; issue_summaries?: unknown }
+  extra?: { summary: string | null; orders: unknown; stats: unknown; issue_summaries?: unknown },
+  version: number = extra?.issue_summaries !== undefined ? 3 : extra ? 2 : 1
 ) {
-  const payload = !extra
-    ? items
-    : extra.issue_summaries === undefined
-      ? { items, summary: extra.summary, orders: extra.orders, stats: extra.stats }
-      : { items, summary: extra.summary, orders: extra.orders, stats: extra.stats, issue_summaries: extra.issue_summaries };
-  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  let text: string;
+  if (version >= 3) {
+    text = canonicalJson({
+      items,
+      summary: extra?.summary ?? null,
+      orders: extra?.orders ?? null,
+      stats: extra?.stats ?? null,
+      issue_summaries: extra?.issue_summaries ?? null,
+    });
+  } else if (version === 2) {
+    text = JSON.stringify({
+      items: legacyItems(items as any[]),
+      summary: extra?.summary ?? null,
+      orders: ((extra?.orders as any[]) ?? []).map((o) => pick(o, ORDER_KEYS)),
+      stats: legacyStats(extra?.stats),
+    });
+  } else {
+    text = JSON.stringify(legacyItems(items as any[]));
+  }
+  return createHash("sha256").update(text).digest("hex");
 }
