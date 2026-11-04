@@ -82,6 +82,9 @@ export default async function EventPage({
         {e.details && <p style={{ whiteSpace: "pre-wrap" }} className="muted">{e.details}</p>}
 
         <div className="chips" style={{ margin: "8px 0" }}>
+          {e.threads.map((t) => (
+            <Link key={t.id} href={`${base}?thread=${t.id}`} className="chip issue">↻ {t.title}</Link>
+          ))}
           {e.issues.map((i) => (
             <Link key={i.id} href={`${base}?issue=${i.id}`} className="chip issue">{i.title}</Link>
           ))}

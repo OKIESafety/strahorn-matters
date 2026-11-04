@@ -233,6 +233,19 @@ table.simple td, table.simple th { text-align: left; padding: 8px 6px; border-bo
 .appendix-head { border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 6px; }
 .chat-text { white-space: pre-wrap; font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; background: var(--surface-2); border-radius: 8px; padding: 10px; margin: 8px 0; max-height: none; }
 
+/* Follow-up threads */
+.thread-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; background: var(--surface); break-inside: avoid; }
+.status { font-size: 0.8rem; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.status.open { background: #fbe9e5; color: #a3402a; }
+.status.resolved { background: #e3ece8; color: #2f5d50; }
+.group-sub { font-size: 0.88rem; margin: -2px 0 8px 16px; color: var(--muted); }
+.step-chip { display: inline-block; margin-left: 8px; font-size: 0.72rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; background: var(--surface-2); color: var(--text); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.step-chip.a { background: #2f5d50; color: #fff; }
+.step-chip.b { background: #b08d57; color: #fff; }
+.key-inline { display: inline-flex; gap: 6px; align-items: center; margin-left: 8px; }
+.key-inline .dot { display: inline-flex; width: 16px; height: 16px; border-radius: 999px; color: #fff; font-size: 9px; font-weight: 700; align-items: center; justify-content: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.key-inline .dot.sq { border-radius: 3px; background: #1d2b36; }
+
 /* Print / report */
 .print-only { display: none; }
 @media print {

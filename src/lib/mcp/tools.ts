@@ -4,6 +4,7 @@ import type { createMcpHandler } from "mcp-handler";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONFIDENCE_VALUES, EVIDENCE_KINDS, TIME_ZONE, type EvidenceKind } from "@/lib/constants";
 import {
+  ensureThreads,
   attachEvidence,
   createEvents,
   ensureIssues,
@@ -46,6 +47,15 @@ Rules for writing records:
 - Parenting time: exchanges (handoffs) are logged with record_exchanges; get_parenting_time compares them with the
   court-ordered schedule (each parent's share of time, late and missed exchanges). Parent "a" is the owner's side.
 - For appointments, school meetings and activities, list who attended in attended_by.
+- FOLLOW-UP THREADS are how the report shows persistence. When the owner raised something more than once (an
+  appointment, a schedule answer, a safety question), log EVERY message in the chain as its own event — each request,
+  each follow-up, each reply from Brandy, and the outcome — with threads=[thread title], actor (a = Jonathan, b =
+  Brandy) and step (request / follow_up / response / action / outcome). Use exact dates and the quoted text. Don't
+  merge several asks into one event. Use save_thread to set the description and mark it resolved (with date) only when
+  it actually was; otherwise leave it open. Check existing threads in get_matter first and reuse their titles.
+- Attorney reports should cover the full history unless the owner asks for a date range; threads span years.
+- Never create, summarize or characterize the owner's own conduct negatively (e.g. language, tone, lateness). If such
+  an entry exists, set exclude_from_reports=true rather than deleting it, and leave it out of summaries.
 - The court order (decree and custody plan) is stored as cited provisions: call get_court_order before describing
   custody, primary residence, decision-making, the schedule, or how disputes go back to court. Quote it; don't paraphrase
   it into legal conclusions.
@@ -58,7 +68,8 @@ Rules for writing records:
   over what span); (5) call create_report_packet with the same filters, the summary and issue_summaries, and give the
   user the link. The report itself groups events by issue in date order, draws the charts, and builds the appendix of
   source messages and photos; you don't need to restate every event in the summary.
-- Always refer to the owner as Jonathan (never "Johnny").
+- Always refer to the owner as Jonathan (never "Johnny"). In summaries, describe threads by count: how many times
+  Jonathan asked, how many times Brandy responded, how long it stayed open; the report computes these from the steps.
 - Original evidence can never be edited or deleted. After writing, tell the user what you created and what you skipped.`;
 
 type Ctx = { db: SupabaseClient; userId: string; origin?: string };
@@ -166,6 +177,10 @@ const eventShape = z.object({
   source_key: z.string().optional().nullable().describe("Stable unique key for this incident from this source; prevents duplicates"),
   attended_by: z.array(z.string()).optional().describe("Who attended (appointments, school meetings, activities)"),
   exclude_from_reports: z.boolean().optional().describe("Keep in the private record but leave out of reports"),
+  threads: z.array(z.string()).optional().describe("Follow-up thread titles this message belongs to (created if missing), e.g. \"Isla's eye doctor (ophthalmology follow-up)\""),
+  actor: z.enum(["a", "b", "other"]).optional().nullable().describe("Who sent/did it: a = Jonathan, b = Brandy"),
+  step: z.enum(["request", "follow_up", "response", "no_response", "action", "outcome"]).optional().nullable()
+    .describe("Role in a follow-up thread: request (first ask), follow_up (asked again), response (other parent replied), action, outcome"),
   evidence: z
     .array(
       z.object({
@@ -229,6 +244,21 @@ export function registerTools(server: McpServer, ctx: Ctx) {
         people: people.data,
         tags: tagCounts,
         event_date_range: { first: first.data?.[0]?.event_date ?? null, last: last.data?.[0]?.event_date ?? null },
+        threads: await (async () => {
+          const { data } = await ctx.db
+            .from("threads")
+            .select("id, title, description, status, resolved_on, event_threads(count)")
+            .eq("matter_id", matter_id)
+            .order("created_at");
+          return ((data ?? []) as any[]).map((t) => ({
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            status: t.status,
+            resolved_on: t.resolved_on,
+            event_count: t.event_threads?.[0]?.count ?? 0,
+          }));
+        })(),
         needs_review_count: review.count ?? 0,
         evidence_count: evidence.count ?? 0,
       });
@@ -247,6 +277,7 @@ export function registerTools(server: McpServer, ctx: Ctx) {
       date_from: dateStr.optional(),
       date_to: dateStr.optional(),
       confidence: confidence.optional(),
+      thread_id: z.string().uuid().optional(),
       limit: z.number().int().min(1).max(300).optional(),
       offset: z.number().int().min(0).optional(),
     },
@@ -263,6 +294,7 @@ export function registerTools(server: McpServer, ctx: Ctx) {
           from: a.date_from,
           to: a.date_to,
           confidence: a.confidence,
+          thread: a.thread_id,
         },
         { limit: a.limit ?? 100, offset: a.offset ?? 0, ascending: true }
       );
@@ -283,6 +315,9 @@ export function registerTools(server: McpServer, ctx: Ctx) {
           source_ref: e.source_ref,
           attended_by: e.attended_by,
           exclude_from_reports: e.exclude_from_reports,
+          threads: e.threads.map((t) => t.title),
+          actor: e.actor,
+          step: e.step,
         })),
       });
     })
@@ -410,6 +445,10 @@ export function registerTools(server: McpServer, ctx: Ctx) {
       add_people: z.array(z.string()).optional(),
       attended_by: z.array(z.string()).optional().describe("Replaces the attended-by list"),
       exclude_from_reports: z.boolean().optional(),
+      add_threads: z.array(z.string()).optional().describe("Thread titles; created if missing"),
+      remove_threads: z.array(z.string()).optional(),
+      actor: z.enum(["a", "b", "other"]).optional().nullable(),
+      step: z.enum(["request", "follow_up", "response", "no_response", "action", "outcome"]).optional().nullable(),
     },
     wrap(async (a: any) => {
       const matterId = await eventMatter(ctx, a.event_id);
@@ -428,6 +467,8 @@ export function registerTools(server: McpServer, ctx: Ctx) {
       if (a.source_ref !== undefined) patch.source_ref = a.source_ref;
       if (a.attended_by !== undefined) patch.attended_by = a.attended_by.map((n: string) => n.trim()).filter(Boolean);
       if (a.exclude_from_reports !== undefined) patch.exclude_from_reports = !!a.exclude_from_reports;
+      if (a.actor !== undefined) patch.actor = a.actor;
+      if (a.step !== undefined) patch.step = a.step;
       if (a.add_tags || a.remove_tags) {
         const remove = new Set(normalizeTags(a.remove_tags));
         patch.tags = normalizeTags([...(cur?.tags ?? []), ...(a.add_tags ?? [])]).filter((t) => !remove.has(t));
@@ -445,6 +486,17 @@ export function registerTools(server: McpServer, ctx: Ctx) {
         const lower = new Set(a.remove_issues.map((t: string) => t.trim().toLowerCase()));
         const ids = (iss ?? []).filter((i) => lower.has(i.title.toLowerCase())).map((i) => i.id);
         if (ids.length) await ctx.db.from("event_issues").delete().eq("event_id", a.event_id).in("issue_id", ids);
+      }
+      if (a.add_threads?.length) {
+        const map = await ensureThreads(ctx.db, matterId, a.add_threads, { userId: ctx.userId, via: "ai" });
+        const rows = a.add_threads.map((t: string) => ({ event_id: a.event_id, thread_id: map.get(t.trim().toLowerCase()) }));
+        await ctx.db.from("event_threads").upsert(rows, { onConflict: "event_id,thread_id", ignoreDuplicates: true });
+      }
+      if (a.remove_threads?.length) {
+        const { data: th } = await ctx.db.from("threads").select("id, title").eq("matter_id", matterId);
+        const lower = new Set(a.remove_threads.map((t: string) => t.trim().toLowerCase()));
+        const ids = (th ?? []).filter((t) => lower.has(t.title.toLowerCase())).map((t) => t.id);
+        if (ids.length) await ctx.db.from("event_threads").delete().eq("event_id", a.event_id).in("thread_id", ids);
       }
       if (a.add_people?.length) {
         const map = await ensurePeople(ctx.db, matterId, a.add_people);
@@ -612,6 +664,31 @@ export function registerTools(server: McpServer, ctx: Ctx) {
         await attachEvidence(ctx.db, a.matter_id, eventId, [{ evidence_id: id }]);
       }
       return ok({ evidence_id: id });
+    })
+  );
+
+  server.tool(
+    "save_thread",
+    "Create or update a follow-up thread (a storyline such as \"Isla's eye doctor\" or \"Holiday schedule\"): " +
+      "description, and whether it is open or resolved (with the date it was resolved).",
+    {
+      matter_id: z.string().uuid(),
+      title: z.string().min(3).max(200),
+      description: z.string().optional().nullable(),
+      status: z.enum(["open", "resolved"]).optional(),
+      resolved_on: dateStr.optional().nullable(),
+    },
+    wrap(async (a: any) => {
+      await requireWrite(ctx, a.matter_id);
+      const map = await ensureThreads(ctx.db, a.matter_id, [a.title], { userId: ctx.userId, via: "ai" });
+      const id = map.get(a.title.trim().toLowerCase())!;
+      const patch: Record<string, unknown> = {};
+      if (a.description !== undefined) patch.description = a.description;
+      if (a.status !== undefined) patch.status = a.status;
+      if (a.resolved_on !== undefined) patch.resolved_on = a.resolved_on;
+      if (a.status === "open") patch.resolved_on = null;
+      if (Object.keys(patch).length) await ctx.db.from("threads").update(patch).eq("id", id);
+      return ok({ thread_id: id, title: a.title.trim() });
     })
   );
 

@@ -74,6 +74,7 @@ export function readFilters(sp: Record<string, string | string[] | undefined>): 
     from: g("from"),
     to: g("to"),
     confidence: g("confidence"),
+    thread: g("thread"),
   };
 }
 

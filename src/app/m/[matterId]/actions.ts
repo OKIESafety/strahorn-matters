@@ -264,3 +264,17 @@ export async function setExcludeAction(matterId: string, eventId: string, exclud
   if (error) throw new Error(error.message);
   revalidatePath(`/m/${matterId}`, "layout");
 }
+
+export async function setThreadStatusAction(matterId: string, threadId: string, formData: FormData) {
+  const { supabase, canWrite } = await requireMatter(matterId);
+  if (!canWrite) throw new Error("Read-only access");
+  const status = String(formData.get("status") ?? "open") === "resolved" ? "resolved" : "open";
+  const on = String(formData.get("resolved_on") ?? "");
+  const { error } = await supabase
+    .from("threads")
+    .update({ status, resolved_on: status === "resolved" && isValidDate(on) ? on : null })
+    .eq("id", threadId)
+    .eq("matter_id", matterId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/m/${matterId}`, "layout");
+}

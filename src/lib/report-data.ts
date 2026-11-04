@@ -67,8 +67,12 @@ export type ExportItem = {
   people: string[];
   attended_by: string[];
   issues: string[];
-  /** Issue this event is filed under in the report (v3+). */
+  /** Issue or thread this event is filed under in the report (v3+). */
   group?: string;
+  group_kind?: "thread" | "issue";
+  threads?: string[];
+  actor?: "a" | "b" | "other" | null;
+  step?: string | null;
   source_ref: string | null;
   evidence: { id: string; filename: string; sha256: string; mime_type: string | null; excerpt: string | null; page_ref: string | null }[];
 };
@@ -79,19 +83,25 @@ export type ExportItem = {
  */
 export function groupForReport(items: ExportItem[]): ExportItem[] {
   const OTHER = "Other events";
-  const counts = new Map<string, number>();
-  for (const i of items) for (const t of i.issues) counts.set(t, (counts.get(t) ?? 0) + 1);
-  const primary = (i: ExportItem) =>
-    i.issues.length
-      ? [...i.issues].sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a.localeCompare(b))[0]
-      : OTHER;
-  const withGroup = items.map((i) => ({ ...i, group: primary(i) }));
-  const groupSize = new Map<string, number>();
-  for (const i of withGroup) groupSize.set(i.group, (groupSize.get(i.group) ?? 0) + 1);
-  const rank = (g: string) => (g === OTHER ? -1 : groupSize.get(g) ?? 0);
+  const issueCount = new Map<string, number>();
+  const threadCount = new Map<string, number>();
+  for (const i of items) {
+    for (const t of i.issues) issueCount.set(t, (issueCount.get(t) ?? 0) + 1);
+    for (const t of i.threads ?? []) threadCount.set(t, (threadCount.get(t) ?? 0) + 1);
+  }
+  const top = (list: string[], counts: Map<string, number>) =>
+    [...list].sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a.localeCompare(b))[0];
+  const withGroup = items.map((i) => {
+    if (i.threads?.length) return { ...i, group: top(i.threads, threadCount), group_kind: "thread" as const };
+    return { ...i, group: i.issues.length ? top(i.issues, issueCount) : OTHER, group_kind: "issue" as const };
+  });
+  const size = new Map<string, number>();
+  for (const i of withGroup) size.set(i.group, (size.get(i.group) ?? 0) + 1);
+  const rank = (i: { group: string; group_kind: string }) =>
+    (i.group_kind === "thread" ? 1_000_000 : 0) + (i.group === OTHER ? -1 : size.get(i.group) ?? 0);
   withGroup.sort(
     (a, b) =>
-      rank(b.group) - rank(a.group) ||
+      rank(b) - rank(a) ||
       a.group.localeCompare(b.group) ||
       a.date.localeCompare(b.date) ||
       (a.time ?? "").localeCompare(b.time ?? "")
@@ -130,6 +140,9 @@ export function buildExportItems(rows: EventRow[], evByEvent: Map<string, Report
     attended_by: e.attended_by,
     issues: e.issues.map((x) => x.title),
     source_ref: e.source_ref,
+    threads: e.threads.map((t) => t.title),
+    actor: e.actor,
+    step: e.step,
     evidence: (evByEvent.get(e.id) ?? []).map((v) => ({
       id: v.id,
       filename: v.filename,

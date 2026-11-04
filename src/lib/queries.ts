@@ -9,6 +9,7 @@ export type EventFilters = {
   from?: string;
   to?: string;
   confidence?: string;
+  thread?: string;
 };
 
 export type EventRow = {
@@ -27,10 +28,13 @@ export type EventRow = {
   evidence_count: number;
   attended_by: string[];
   exclude_from_reports: boolean;
+  actor: "a" | "b" | "other" | null;
+  step: string | null;
+  threads: { id: string; title: string; status: string; resolved_on: string | null }[];
 };
 
 export const EVENT_SELECT =
-  "id, event_date, event_time, title, summary, details, tags, confidence, created_via, source_ref, attended_by, exclude_from_reports, event_issues(issues(id, title)), event_people(people(id, name)), event_evidence(count)";
+  "id, event_date, event_time, title, summary, details, tags, confidence, created_via, source_ref, attended_by, exclude_from_reports, actor, step, event_threads(threads(id, title, status, resolved_on)), event_issues(issues(id, title)), event_people(people(id, name)), event_evidence(count)";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function shapeEvent(r: any): EventRow {
@@ -50,6 +54,9 @@ export function shapeEvent(r: any): EventRow {
     evidence_count: r.event_evidence?.[0]?.count ?? 0,
     attended_by: r.attended_by ?? [],
     exclude_from_reports: !!r.exclude_from_reports,
+    actor: r.actor ?? null,
+    step: r.step ?? null,
+    threads: (r.event_threads ?? []).map((x: any) => x.threads).filter(Boolean),
   };
 }
 
@@ -67,6 +74,11 @@ export async function loadEvents(
   }
   if (f.person) {
     const { data } = await db.from("event_people").select("event_id").eq("person_id", f.person);
+    const ids = (data ?? []).map((r) => r.event_id);
+    restrictIds = restrictIds ? restrictIds.filter((i) => ids.includes(i)) : ids;
+  }
+  if (f.thread) {
+    const { data } = await db.from("event_threads").select("event_id").eq("thread_id", f.thread);
     const ids = (data ?? []).map((r) => r.event_id);
     restrictIds = restrictIds ? restrictIds.filter((i) => ids.includes(i)) : ids;
   }

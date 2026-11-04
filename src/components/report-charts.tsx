@@ -250,3 +250,60 @@ export function StackedMonths({
     </svg>
   );
 }
+
+/** One follow-up thread on a line: J = Jonathan asked/followed up, B = Brandy responded, ■ = outcome. */
+export function ThreadTimeline({
+  steps,
+  end,
+  open,
+}: {
+  steps: { date: string; actor: string | null; step: string | null; exhibit: string }[];
+  end: string;
+  open: boolean;
+}) {
+  if (!steps.length) return null;
+  const dates = steps.map((s) => s.date).sort();
+  const min = dayNum(dates[0]);
+  const max = Math.max(min + 14, dayNum(end > dates[dates.length - 1] ? end : dates[dates.length - 1]));
+  const W = 700;
+  const L = 14;
+  const R = 70;
+  const y = 30;
+  const x = (d: string) => L + ((dayNum(d) - min) / (max - min)) * (W - L - R);
+  const fmt = (d: string) => {
+    const [yy, m, dd] = d.split("-").map(Number);
+    return new Date(Date.UTC(yy, m - 1, dd)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit", timeZone: "UTC" });
+  };
+  // stagger labels so close dots don't overlap
+  let lastX = -100;
+  let row = 0;
+  return (
+    <svg viewBox={`0 0 ${W} 76`} width="100%" role="img" aria-label="Follow-up timeline">
+      <line x1={L} x2={x(end)} y1={y} y2={y} stroke={GRID} strokeWidth={3} />
+      {open && (
+        <>
+          <line x1={x(dates[dates.length - 1])} x2={x(end)} y1={y} y2={y} stroke="#c0583b" strokeWidth={3} strokeDasharray="5 4" />
+          <text x={x(end) + 6} y={y + 4} fontSize="10" fill="#c0583b" fontWeight="700">still open</text>
+        </>
+      )}
+      {steps.map((s, i) => {
+        const cx = x(s.date);
+        row = cx - lastX < 34 ? (row + 1) % 2 : 0;
+        lastX = cx;
+        const fill = s.actor === "a" ? "#2f5d50" : s.actor === "b" ? "#b08d57" : "#6b7280";
+        const label = s.step === "outcome" ? "" : s.actor === "a" ? "J" : s.actor === "b" ? "B" : "•";
+        return (
+          <g key={i}>
+            {s.step === "outcome" ? (
+              <rect x={cx - 8} y={y - 8} width={16} height={16} rx={3} fill="#1d2b36" />
+            ) : (
+              <circle cx={cx} cy={y} r={9} fill={fill} stroke="#fff" strokeWidth={1.5} />
+            )}
+            <text x={cx} y={y + 4} fontSize="10" fill="#fff" textAnchor="middle" fontWeight="700">{label}</text>
+            <text x={cx} y={row ? 70 : 56} fontSize="9" fill={MUTED} textAnchor="middle">{fmt(s.date)}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}

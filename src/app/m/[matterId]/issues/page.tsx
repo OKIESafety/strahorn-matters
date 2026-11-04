@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireMatter } from "@/lib/access";
-import { createIssueAction } from "../actions";
+import { createIssueAction, setThreadStatusAction } from "../actions";
+import { formatDate, todayLocal } from "@/lib/format";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default async function IssuesPage({ params }: { params: Promise<{ matterId: string }> }) {
@@ -18,10 +19,53 @@ export default async function IssuesPage({ params }: { params: Promise<{ matterI
     count: i.event_issues?.[0]?.count ?? 0,
   }));
   const create = createIssueAction.bind(null, matterId);
+  const { data: tdata } = await supabase
+    .from("threads")
+    .select("id, title, description, status, resolved_on, event_threads(count)")
+    .eq("matter_id", matterId)
+    .order("created_at");
+  const threads = (tdata ?? []) as any[];
 
   return (
     <>
-      <h1>Issues</h1>
+      {threads.length > 0 && (
+        <>
+          <h1>Follow-up threads</h1>
+          <p className="muted">Things you raised more than once. Each message is a step; the report counts the asks and replies.</p>
+          {threads.map((t) => (
+            <div key={t.id} className="card">
+              <div className="row between">
+                <a href={`${base}?thread=${t.id}`} className="event-title">{t.title}</a>
+                <span className={`status ${t.status}`}>
+                  {t.status === "resolved" ? `Resolved ${t.resolved_on ? formatDate(t.resolved_on) : ""}` : "Open"}
+                </span>
+              </div>
+              {t.description && <div className="event-summary">{t.description}</div>}
+              <div className="row between" style={{ marginTop: 6 }}>
+                <small className="muted">{t.event_threads?.[0]?.count ?? 0} messages/steps</small>
+                {canWrite && (
+                  <form action={setThreadStatusAction.bind(null, matterId, t.id)} className="row" style={{ gap: 6 }}>
+                    {t.status === "open" ? (
+                      <>
+                        <input type="hidden" name="status" value="resolved" />
+                        <input type="date" name="resolved_on" defaultValue={todayLocal()} style={{ width: "auto", padding: "6px" }} />
+                        <button className="btn small">Mark resolved</button>
+                      </>
+                    ) : (
+                      <>
+                        <input type="hidden" name="status" value="open" />
+                        <button className="btn small">Reopen</button>
+                      </>
+                    )}
+                  </form>
+                )}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      <h1 style={{ marginTop: threads.length ? 24 : 0 }}>Issues</h1>
       <p className="muted">Each issue groups the events that support one point, e.g. “Late exchanges”.</p>
 
       {issues.length === 0 && <div className="card muted">No issues yet.</div>}

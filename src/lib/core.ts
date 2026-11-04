@@ -21,6 +21,9 @@ export type EventInput = {
   source_key?: string | null;
   attended_by?: string[];
   exclude_from_reports?: boolean;
+  threads?: string[]; // follow-up thread titles; created if missing
+  actor?: "a" | "b" | "other" | null;
+  step?: "request" | "follow_up" | "response" | "no_response" | "action" | "outcome" | null;
   evidence?: { evidence_id: string; excerpt?: string | null; page_ref?: string | null }[];
 };
 
@@ -84,6 +87,26 @@ export async function ensureIssues(
       .select("id")
       .single();
     if (insErr) throw new Error(`Could not create issue "${title}": ${insErr.message}`);
+    map.set(title.toLowerCase(), data.id);
+  }
+  return map;
+}
+
+export async function ensureThreads(db: SupabaseClient, matterId: string, titles: string[], actor: Actor) {
+  const map = new Map<string, string>();
+  const wanted = Array.from(new Set(titles.map((t) => t.trim()).filter(Boolean)));
+  if (!wanted.length) return map;
+  const { data: existing, error } = await db.from("threads").select("id, title").eq("matter_id", matterId);
+  if (error) throw new Error(error.message);
+  for (const t of existing ?? []) map.set(t.title.toLowerCase(), t.id);
+  for (const title of wanted) {
+    if (map.has(title.toLowerCase())) continue;
+    const { data, error: insErr } = await db
+      .from("threads")
+      .insert({ matter_id: matterId, title, created_by: actor.userId, created_via: actor.via })
+      .select("id")
+      .single();
+    if (insErr) throw new Error(`Could not create thread "${title}": ${insErr.message}`);
     map.set(title.toLowerCase(), data.id);
   }
   return map;
@@ -155,6 +178,12 @@ export async function createEvents(
     matterId,
     inputs.flatMap((e) => e.people ?? [])
   );
+  const threadMap = await ensureThreads(
+    db,
+    matterId,
+    inputs.flatMap((e) => e.threads ?? []),
+    actor
+  );
 
   const results: CreateResult[] = [];
 
@@ -211,6 +240,8 @@ export async function createEvents(
           source_key: sourceKey,
           attended_by: (e.attended_by ?? []).map((n) => n.trim()).filter(Boolean).slice(0, 20),
           exclude_from_reports: !!e.exclude_from_reports,
+          actor: e.actor ?? null,
+          step: e.step ?? null,
           created_by: actor.userId,
           created_via: actor.via,
         })
@@ -236,6 +267,16 @@ export async function createEvents(
           .from("event_people")
           .insert(Array.from(new Set(personIds)).map((person_id) => ({ event_id: ev.id, person_id })));
         if (jpErr) throw new Error(`Event created but people link failed: ${jpErr.message}`);
+      }
+
+      const threadIds = (e.threads ?? [])
+        .map((t) => threadMap.get(t.trim().toLowerCase()))
+        .filter(Boolean) as string[];
+      if (threadIds.length) {
+        const { error: jtErr } = await db
+          .from("event_threads")
+          .insert(Array.from(new Set(threadIds)).map((thread_id) => ({ event_id: ev.id, thread_id })));
+        if (jtErr) throw new Error(`Event created but thread link failed: ${jtErr.message}`);
       }
 
       if (e.evidence?.length) {

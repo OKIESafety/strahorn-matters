@@ -5,12 +5,14 @@ import type { EventFilters } from "./queries";
 import { loadOrders } from "./orders";
 import { loadParents, parentingTimeReport } from "./time-data";
 import { todayLocal } from "./format";
+import { threadStat, type ThreadStat } from "./thread-stats";
 
 export type PacketStats = {
   totals: { events: number; files: number };
   range: { from: string; to: string } | null;
   per_month: { label: string; value: number }[];
   per_issue: { label: string; value: number }[];
+  threads?: ThreadStat[];
   parenting: null | {
     from: string;
     to: string;
@@ -119,11 +121,35 @@ export async function createPacket(
     }
   }
 
+  // Follow-up threads present in this report
+  const threadTitles = Array.from(new Set(items.flatMap((i) => i.threads ?? [])));
+  let threads: ThreadStat[] = [];
+  if (threadTitles.length) {
+    const { data: meta } = await db
+      .from("threads")
+      .select("title, description, status, resolved_on")
+      .eq("matter_id", matterId)
+      .in("title", threadTitles);
+    const today = todayLocal();
+    threads = ((meta ?? []) as { title: string; description: string | null; status: "open" | "resolved"; resolved_on: string | null }[])
+      .map((m) =>
+        threadStat(
+          m,
+          items
+            .filter((i) => (i.threads ?? []).includes(m.title))
+            .map((i) => ({ exhibit: i.exhibit, date: i.date, actor: i.actor ?? null, step: i.step ?? null, title: i.title })),
+          today
+        )
+      )
+      .sort((x, y) => y.asks - x.asks || x.first.localeCompare(y.first));
+  }
+
   const stats: PacketStats = {
     totals: { events: items.length, files: items.reduce((n, i) => n + i.evidence.length, 0) },
     range: dates.length ? { from: dates[0], to: dates[dates.length - 1] } : null,
     per_month: keys.map((k) => ({ label: monthLabel(k), value: pm.get(k) ?? 0 })),
     per_issue: Array.from(pi.entries()).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value })),
+    threads,
     parenting,
   };
 
