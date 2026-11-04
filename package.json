@@ -12,6 +12,7 @@
     "@modelcontextprotocol/sdk": "^1.17.5",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.57.0",
+    "fflate": "^0.8.2",
     "mcp-handler": "^1.0.2",
     "next": "^15.5.0",
     "qrcode": "^1.5.4",

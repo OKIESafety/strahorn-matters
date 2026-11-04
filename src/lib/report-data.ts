@@ -67,9 +67,54 @@ export type ExportItem = {
   people: string[];
   attended_by: string[];
   issues: string[];
+  /** Issue this event is filed under in the report (v3+). */
+  group?: string;
   source_ref: string | null;
   evidence: { id: string; filename: string; sha256: string; mime_type: string | null; excerpt: string | null; page_ref: string | null }[];
 };
+
+/**
+ * Orders events for the report: grouped by issue (largest group first), chronological within each group,
+ * then renumbered 1..N. An event in several issues is filed under the one with the most events.
+ */
+export function groupForReport(items: ExportItem[]): ExportItem[] {
+  const OTHER = "Other events";
+  const counts = new Map<string, number>();
+  for (const i of items) for (const t of i.issues) counts.set(t, (counts.get(t) ?? 0) + 1);
+  const primary = (i: ExportItem) =>
+    i.issues.length
+      ? [...i.issues].sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a.localeCompare(b))[0]
+      : OTHER;
+  const withGroup = items.map((i) => ({ ...i, group: primary(i) }));
+  const groupSize = new Map<string, number>();
+  for (const i of withGroup) groupSize.set(i.group, (groupSize.get(i.group) ?? 0) + 1);
+  const rank = (g: string) => (g === OTHER ? -1 : groupSize.get(g) ?? 0);
+  withGroup.sort(
+    (a, b) =>
+      rank(b.group) - rank(a.group) ||
+      a.group.localeCompare(b.group) ||
+      a.date.localeCompare(b.date) ||
+      (a.time ?? "").localeCompare(b.time ?? "")
+  );
+  return withGroup.map((i, n) => ({ ...i, exhibit: String(n + 1) }));
+}
+
+/** Appendix: each unique file, numbered A-1.. in the order events cite it, with the events it supports. */
+export function buildAppendix(items: ExportItem[]) {
+  const map = new Map<string, { ref: string; id: string; filename: string; sha256: string; mime_type: string | null; supports: string[]; quotes: { exhibit: string; excerpt: string | null; page_ref: string | null }[] }>();
+  for (const i of items) {
+    for (const v of i.evidence) {
+      let a = map.get(v.id);
+      if (!a) {
+        a = { ref: `A-${map.size + 1}`, id: v.id, filename: v.filename, sha256: v.sha256, mime_type: v.mime_type, supports: [], quotes: [] };
+        map.set(v.id, a);
+      }
+      if (!a.supports.includes(i.exhibit)) a.supports.push(i.exhibit);
+      a.quotes.push({ exhibit: i.exhibit, excerpt: v.excerpt, page_ref: v.page_ref });
+    }
+  }
+  return Array.from(map.values());
+}
 
 /** Snapshot of events + evidence fingerprints for an exhibit packet. */
 export function buildExportItems(rows: EventRow[], evByEvent: Map<string, ReportEvidence[]>): ExportItem[] {
@@ -97,7 +142,14 @@ export function buildExportItems(rows: EventRow[], evByEvent: Map<string, Report
 }
 
 /** Deterministic fingerprint of an export's contents (v1: exhibits only; v2: exhibits + summary + order terms + charts). */
-export function manifestHash(items: ExportItem[], extra?: { summary: string | null; orders: unknown; stats: unknown }) {
-  const payload = extra ? { items, summary: extra.summary, orders: extra.orders, stats: extra.stats } : items;
+export function manifestHash(
+  items: ExportItem[],
+  extra?: { summary: string | null; orders: unknown; stats: unknown; issue_summaries?: unknown }
+) {
+  const payload = !extra
+    ? items
+    : extra.issue_summaries === undefined
+      ? { items, summary: extra.summary, orders: extra.orders, stats: extra.stats }
+      : { items, summary: extra.summary, orders: extra.orders, stats: extra.stats, issue_summaries: extra.issue_summaries };
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }

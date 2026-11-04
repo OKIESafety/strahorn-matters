@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildExportItems, loadReportData, manifestHash } from "./report-data";
+import { buildExportItems, groupForReport, loadReportData, manifestHash } from "./report-data";
 import type { EventFilters } from "./queries";
 import { loadOrders } from "./orders";
 import { loadParents, parentingTimeReport } from "./time-data";
@@ -50,12 +50,19 @@ function monthKeys(from: string, to: string) {
 
 export async function createPacket(
   db: SupabaseClient,
-  args: { matterId: string; userId: string; title: string; filters: EventFilters; summary: string | null }
+  args: {
+    matterId: string;
+    userId: string;
+    title: string;
+    filters: EventFilters;
+    summary: string | null;
+    issueSummaries?: { issue: string; summary: string }[];
+  }
 ) {
   const { matterId, userId, filters } = args;
   const { rows, evByEvent } = await loadReportData(db, matterId, filters);
   if (!rows.length) throw new Error("No events match these filters");
-  const items = buildExportItems(rows, evByEvent);
+  const items = groupForReport(buildExportItems(rows, evByEvent));
 
   // Court-order terms snapshot
   const orders = (await loadOrders(db, matterId)).map((p) => ({
@@ -121,6 +128,9 @@ export async function createPacket(
   };
 
   const summary = args.summary?.trim() || null;
+  const issue_summaries = (args.issueSummaries ?? [])
+    .map((x) => ({ issue: x.issue.trim(), summary: x.summary.trim() }))
+    .filter((x) => x.issue && x.summary);
   const { data, error } = await db
     .from("exports")
     .insert({
@@ -131,8 +141,9 @@ export async function createPacket(
       summary,
       orders,
       stats,
-      manifest_version: 2,
-      manifest_sha256: manifestHash(items, { summary, orders, stats }),
+      issue_summaries,
+      manifest_version: 3,
+      manifest_sha256: manifestHash(items, { summary, orders, stats, issue_summaries }),
       created_by: userId,
     })
     .select("id")

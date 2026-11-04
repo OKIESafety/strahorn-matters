@@ -215,6 +215,24 @@ table.simple td, table.simple th { text-align: left; padding: 8px 6px; border-bo
 .index-table td:first-child { font-weight: 700; }
 .report-foot { font-size: 0.8rem; margin-top: 24px; }
 
+/* Report v3: issues, events, appendix */
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: middle; margin-right: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.8rem; margin-top: 6px; }
+.issue-table td, .issue-table th { padding: 7px 6px; }
+.issue-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.issue-card { border: 1px solid var(--border); border-top: 5px solid var(--accent); border-radius: 10px; padding: 12px; background: var(--surface); break-inside: avoid; font-size: 0.93rem; }
+.pill { color: #fff; border-radius: 999px; padding: 1px 9px; font-weight: 700; font-size: 0.85rem; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.event-group { margin-bottom: 18px; }
+.group-head { border-left: 6px solid var(--accent); padding: 4px 0 4px 10px; margin: 18px 0 8px; break-after: avoid; }
+.event-row { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); break-inside: avoid; }
+.event-num { min-width: 34px; height: 34px; border-radius: 8px; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.event-when { font-size: 0.82rem; color: var(--muted); }
+.event-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--muted); margin-top: 6px; }
+.event-meta b { color: var(--text); }
+.appendix-item { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 14px; background: var(--surface); break-inside: avoid; }
+.appendix-head { border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 6px; }
+.chat-text { white-space: pre-wrap; font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; background: var(--surface-2); border-radius: 8px; padding: 10px; margin: 8px 0; max-height: none; }
+
 /* Print / report */
 .print-only { display: none; }
 @media print {

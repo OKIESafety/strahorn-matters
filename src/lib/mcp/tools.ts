@@ -54,7 +54,10 @@ Rules for writing records:
   150–400 words: what the report covers, the pattern the exhibits show with dates and counts, and the relevant order
   terms with their citations (e.g. mediation under Joint Custody Plan ¶16 before court; Mother is primary residential
   parent under ¶7(a)). Factual and neutral, refer to exhibits by date, no legal advice or conclusions about outcome;
-  (4) call create_report_packet with the same filters and the summary, and give the user the link.
+  (4) also write issue_summaries: 2–3 neutral sentences for each issue in the report (what the events show, how many,
+  over what span); (5) call create_report_packet with the same filters, the summary and issue_summaries, and give the
+  user the link. The report itself groups events by issue in date order, draws the charts, and builds the appendix of
+  source messages and photos; you don't need to restate every event in the summary.
 - Always refer to the owner as Jonathan (never "Johnny").
 - Original evidence can never be edited or deleted. After writing, tell the user what you created and what you skipped.`;
 
@@ -644,6 +647,11 @@ export function registerTools(server: McpServer, ctx: Ctx) {
       matter_id: z.string().uuid(),
       title: z.string().min(3).max(200).describe("e.g. 'Late Exchanges, Jan–Oct 2026 — Report to Counsel'"),
       summary: z.string().min(40).max(8000).describe("150–400 word factual summary written for the attorney"),
+      issue_summaries: z
+        .array(z.object({ issue: z.string().describe("Issue title exactly as stored"), summary: z.string().max(1500) }))
+        .max(30)
+        .optional()
+        .describe("2–3 sentences per issue: what that group of events shows, with counts and date span"),
       issue_id: z.string().uuid().optional(),
       tag: z.string().optional(),
       person_id: z.string().uuid().optional(),
@@ -667,6 +675,7 @@ export function registerTools(server: McpServer, ctx: Ctx) {
         title: a.title,
         filters,
         summary: a.summary,
+        issueSummaries: a.issue_summaries,
       });
       await ctx.db.from("matters").update({ report_summary: a.summary }).eq("id", a.matter_id);
       const base = ctx.origin ?? "https://strahorn-matters.vercel.app";

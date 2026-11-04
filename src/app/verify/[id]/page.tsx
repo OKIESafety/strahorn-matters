@@ -21,16 +21,18 @@ export default async function VerifyPage({
   const db = createAdminClient();
   const { data: ex } = await db
     .from("exports")
-    .select("id, title, items, manifest_sha256, created_at, summary, orders, stats, manifest_version")
+    .select("id, title, items, manifest_sha256, created_at, summary, orders, stats, manifest_version, issue_summaries")
     .eq("id", id)
     .maybeSingle();
   if (!ex) notFound();
 
   const items = ex.items as ExportItem[];
   const packetIntact =
-    (ex.manifest_version === 2
-      ? manifestHash(items, { summary: ex.summary ?? null, orders: ex.orders, stats: ex.stats })
-      : manifestHash(items)) === ex.manifest_sha256;
+    (ex.manifest_version === 3
+      ? manifestHash(items, { summary: ex.summary ?? null, orders: ex.orders, stats: ex.stats, issue_summaries: ex.issue_summaries })
+      : ex.manifest_version === 2
+        ? manifestHash(items, { summary: ex.summary ?? null, orders: ex.orders, stats: ex.stats })
+        : manifestHash(items)) === ex.manifest_sha256;
   const files = items.flatMap((i) => i.evidence.map((v) => ({ ...v, exhibit: i.exhibit })));
   const ids = Array.from(new Set(files.map((f) => f.id)));
   const { data: ev } = ids.length
